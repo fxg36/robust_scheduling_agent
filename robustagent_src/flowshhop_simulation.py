@@ -139,7 +139,7 @@ class FlowshopSimulation:
                         next_log = mlogs[i+1]
                         w += next_log.task_start - curr_log.task_end
                     wratios[machine_no] = w / (m_end-m_start)
-                self.kpis["machine_waittime_ratio"] = wratios
+                self.kpis["machine_waittime_ratio"] = wratios 
                 return
             yield self.env.timeout(1)
 

@@ -25,12 +25,12 @@ class RobustnessEvaluator:
         )
         return abs(res["r_mean"]), abs(res["scom_mean"]), res
 
-    def eval(self, candidate_job_dict, n_evals=1):
+    def eval(self, candidate_job_dict, start_times = None ,n_evals=1):
         """evaluate the manipulated job durations (see job_dict) regarding to its robustness and stability.
         compare it with the baselien schedule."""
 
         fs = sim.FlowshopSimulation(
-            candidate_job_dict, self.initial_start_times, fire_dynamic_events=False
+            candidate_job_dict, self.initial_start_times if start_times == None else start_times, fire_dynamic_events=False
         )
         fs.env.run(until=fs.meta_proc)
 
