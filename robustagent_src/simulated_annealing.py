@@ -16,18 +16,18 @@ def create_neighbor(curr_solution, temp, sa_type):
     if sa_type == 0:
         jobs = list(n[0].values())
         t = choice(list(filter(lambda x: isinstance(x, list), choice(jobs))))
-        if randint(0,1) > 0:
+        if randint(0, 1) > 0:
             t[1] *= 1 + max(0.015, 0.06 * temp)
         else:
             t[1] *= 1 - max(0.015, 0.06 * temp)
     elif sa_type == 1:
-        machine = randint(1,3)
-        swap = sample( list(filter(lambda x: x[1] == machine, list(n[1].keys()))), 2)
+        machine = randint(1, 3)
+        swap = sample(list(filter(lambda x: x[1] == machine, list(n[1].keys()))), 2)
         temp = n[1][swap[0]]
         n[1][swap[0]] = n[1][swap[1]]
         n[1][swap[1]] = temp
     else:
-        raise Exception('sa_type not defined')
+        raise Exception("sa_type not defined")
     return n
     return milp.get_job_dict(n)
 
@@ -38,10 +38,18 @@ def sa_method(
 ):
     samples = base.load_samples(hp.NO_JOBS)
     bs: base.BaselineSchedule
-    bs = samples[1]
+    bs = samples[0]
     ev = bs.evaluator
     best = (ev.jobs, ev.initial_start_times)
-    best_eval = (1,ev.initial_stats)
+    best_eval = (
+        ev.calc_fittness(
+            ev.initial_stats["r_mean"],
+            ev.initial_stats["scom_mean"],
+            ev.initial_stats["r_mean"],
+            ev.initial_stats["scom_mean"]
+        ),
+        ev.initial_stats,
+    )
     curr, curr_eval = best, best_eval
     improvements_missed = 0
 
@@ -52,7 +60,7 @@ def sa_method(
 
     for i in range(NO_ITERATIONS):
         t = (NO_ITERATIONS - i) / NO_ITERATIONS
-        #candidate = create_neighbor(curr, curr_eval[1]["r_mean"], t)
+        # candidate = create_neighbor(curr, curr_eval[1]["r_mean"], t)
         candidate = create_neighbor(curr, t, sa_type)
         candidate_eval = ev.eval(candidate[0], candidate[1], n_evals=1)
 
@@ -83,5 +91,5 @@ def sa_method(
 
 
 if __name__ == "__main__":
-    sa_type = 1 # 0 = add slack times, 1 = create neighbour
+    sa_type = 0  # 0 = add slack times, 1 = create neighbour
     sa_method(sa_type, do_print=True)

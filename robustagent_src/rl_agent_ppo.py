@@ -6,8 +6,8 @@ import hyperparam as hp
 import rl_agent_base as base
 
 LEARNING_RATE_START = 0.0001  # controls how much to change the model in response to the estimated error each time the model weights are updated
-DISCOUNT_FACTOR = 0.9  # how much the reinforcement learning agents cares about rewards in the distant future
-EPISODES = 1000  # no. of episodes for the training
+DISCOUNT_FACTOR = 0.95  # how much the reinforcement learning agents cares about rewards in the distant future
+EPISODES = 500  # no. of episodes for the training
 # NET_ARCH = dict(activation_fn=th.nn.ReLU, net_arch=[625, dict(vf=[400,200,100,50,20,10], pi=[50,10])]) # just hidden layers. input and output layer are set automatically by stable baselines.
 # NET_ARCH = dict(
 #     activation_fn=th.nn.ReLU, net_arch=[128, dict(vf=[128, 64, 32, 16, 8], pi=[32, 16, 8])]
@@ -35,7 +35,7 @@ def train():
         learning_rate=linear_schedule(LEARNING_RATE_START),
         gamma=DISCOUNT_FACTOR,
         n_steps=STEPS_TO_UPDATE,
-        batch_size=STEPS_TO_UPDATE, 
+        batch_size=STEPS_TO_UPDATE,
     )
     model.learn(total_timesteps=base.EPISODE_LEN * EPISODES, log_interval=1, tb_log_name="ppo")
     model.save("model_ppo")
