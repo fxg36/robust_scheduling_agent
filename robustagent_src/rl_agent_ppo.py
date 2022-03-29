@@ -8,12 +8,8 @@ import rl_agent_base as base
 LEARNING_RATE_START = 0.0001  # controls how much to change the model in response to the estimated error each time the model weights are updated
 DISCOUNT_FACTOR = 0.95  # how much the reinforcement learning agents cares about rewards in the distant future
 EPISODES = 500  # no. of episodes for the training
-# NET_ARCH = dict(activation_fn=th.nn.ReLU, net_arch=[625, dict(vf=[400,200,100,50,20,10], pi=[50,10])]) # just hidden layers. input and output layer are set automatically by stable baselines.
-# NET_ARCH = dict(
-#     activation_fn=th.nn.ReLU, net_arch=[128, dict(vf=[128, 64, 32, 16, 8], pi=[32, 16, 8])]
-# )  # just hidden layers. input and output layer are set automatically by stable baselines.
 NET_ARCH = dict(
-    activation_fn=th.nn.ReLU, net_arch=[1024, dict(vf=[512, 256, 128, 64, 32, 16, 8], pi=[256, 64, 16])]
+    activation_fn=th.nn.ReLU, net_arch=[1024, dict(vf=[512, 128, 64, 32], pi=[256, 64, 16])]
 )  # just hidden layers. input and output layer are set automatically by stable baselines.
 STEPS_TO_UPDATE = 1 * base.EPISODE_LEN  # after this no. of steps, the weights are updated
 
@@ -38,22 +34,29 @@ def train():
         batch_size=STEPS_TO_UPDATE,
     )
     model.learn(total_timesteps=base.EPISODE_LEN * EPISODES, log_interval=1, tb_log_name="ppo")
-    model.save("model_ppo")
+    model.save(f"model_ppo_{hp.SCHED_OBJECTIVE}_J{hp.NO_JOBS}")
     print("#############################\ntraining completed")
 
 
 def test():
     env_norm = base.get_env(n_episodes=EPISODES, learning_rate_start=LEARNING_RATE_START)
-    model = PPO.load("model_ppo")
+    model = PPO.load(f"model_ppo_{hp.SCHED_OBJECTIVE}_J{4}")
     obs = env_norm.reset()
+    eps = 100
+    e = 0
     while True:
         action, _states = model.predict(np.array(obs))
         obs, reward, done, info = env_norm.step(action)
         if done:
+            e += 1
+            if e == eps:
+                break
             print("TEST RESULT")
             env_norm.reset()
+    for v in base.V:
+        print(v)
 
-perform_tests = 0
+perform_tests = 1
 if perform_tests == 1:
     test()
 else:

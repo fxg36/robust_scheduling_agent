@@ -197,7 +197,7 @@ def run_monte_carlo_experiments(
     (0: realistic durations, >0: schedule too conservative, <0: schedule too optimistic)
     """
     monte_carlo_results = []
-    for _ in range(n_experiments):
+    for i in range(n_experiments):
         sim = FlowshopSimulation(jobs, start_times, fire_dynamic_events=True)
         sim.env.run(until=sim.meta_proc)
         com, stab_com_sum, dur, stab_dur_sum, slack = sim.get_stability_metrices()
@@ -215,6 +215,8 @@ def run_monte_carlo_experiments(
                 "machine_wait_time_ratio": sim.kpis['machine_waittime_ratio']
             }
         )
+        if i > 0 and i % 1000 == 0:
+            print(i)
     mean_job_duration = {}
     std_job_duration = {}
     mean_job_completion = {}

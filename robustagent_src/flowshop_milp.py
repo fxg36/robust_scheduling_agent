@@ -91,7 +91,8 @@ def solve(objective: Objective, input):
                 model += (M + processing_time[i, k]) * (1 - y[i][j][k]) + (x[j][k] - x[i][k]) >= processing_time[i, k]
 
 
-    model.solve(pulp.PULP_CBC_CMD(msg=0))
+    solver = pulp.getSolver('PULP_CBC_CMD', timeLimit=120, msg=1)
+    model.solve(solver)
 
     start_times = list(map(lambda y: _get_x_value(y), filter(lambda x: x.name.startswith("x_"), model.variables())))
     obj_value = next(filter(lambda x: x.name == objective, model.variables())).varValue

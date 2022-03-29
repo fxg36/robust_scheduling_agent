@@ -21,17 +21,27 @@ NO_ACTIONS = 3  # = factor to stretch processing times. chosen by the agent for 
 # no. of jobs for the test/training instances
 EPISODE_LEN = hp.NO_JOBS * 3  # 3 machines = 3 tasks per job
 
-
+V = []
 class BaselineSchedule:
     def __init__(self, jobs_raw):
         d.JobFactory.preprocess_jobs(jobs_raw)
         self.jobs_raw = jobs_raw
         self.no_p1 = list(map(lambda x: int(x[5].replace("p", "")), jobs_raw)).count(1)
-        start_times, obj_val = milp.solve(hp.SCHED_OBJECTIVE, jobs_raw)
-        self.objective_value = obj_val
+        start_times, _ = milp.solve(hp.SCHED_OBJECTIVE, jobs_raw)
+        
         self.job_dict = milp.get_job_dict(jobs_raw)
         self.task_order = list(map(lambda x: x[0], sorted(list(start_times.items()), key=lambda x: x[1])))
-        self.mc_stats = s.run_monte_carlo_experiments(obj_val, self.job_dict, start_times, n_experiments=10000)
+
+        fs = s.FlowshopSimulation(
+            self.job_dict,
+            start_times,
+            fire_dynamic_events=False,
+        )
+        fs.env.run(until=fs.meta_proc)
+        obj_val_cleaned = fs.kpis[hp.SCHED_OBJECTIVE]
+        self.objective_value = obj_val_cleaned
+
+        self.mc_stats = s.run_monte_carlo_experiments(obj_val_cleaned, self.job_dict, start_times, n_experiments=10000)
         self.evaluator = RobustnessEvaluator(jobs_raw)
 
         assert len(self.task_order) == EPISODE_LEN, "EPISODE LEN is not correct. Check no. machines/operations"
@@ -158,7 +168,6 @@ class RobustFlowshopGymEnv(gym.Env):
                     reward += -8 / EPISODE_LEN  # punish harder when it has no slack
                 else:
                     reward += -4 / EPISODE_LEN
-
         if action == 1:  # extend operation time (=add slack)
             slack_to_append = task_dur_std / 8  # to add: quarter of operation time std
             if high_slack:  # but if the operation already has a high slack: punish!
@@ -186,6 +195,7 @@ class RobustFlowshopGymEnv(gym.Env):
 
     def handle_episode_end(self):
         v, stats = self.curr_candidate.evaluator.eval(self.modified_jobs)
+        V.append(v)
         reward = -v * 64
 
         actions = list(map(lambda x: x[0], self.action_log))
@@ -196,7 +206,7 @@ class RobustFlowshopGymEnv(gym.Env):
         print(
             f"Ep{self.curr_episode:4d}/{self.n_episodes} (LR={lr:10.8f})  |  Rob/Stab={v:4.3f}  |  EndRew={reward:6.2f}  |  InterRew={interim_rewards:5.3f}  |  ActionStd={action_std:4.3f} ({actions})"
         )
-
+        
         self._update_state(last=True, stats=stats, final_result=v)
 
         return reward

@@ -7,16 +7,19 @@ import rl_agent_base as base
 
 LEARNING_RATE_START = 0.0001  # controls how much to change the model in response to the estimated error each time the model weights are updated
 DISCOUNT_FACTOR = 0.95  # how much the reinforcement learning agents cares about rewards in the distant future
-EPISODES = 500  # no. of episodes for the training
+TRAJECTORY_COLLECTING_EPISODES = 250
+TRAIN_EPISODES = 500  # no. of episodes for the training
 # NET_ARCH = dict(activation_fn=th.nn.ReLU, net_arch=[625, dict(vf=[400,200,100,50,20,10], pi=[50,10])]) # just hidden layers. input and output layer are set automatically by stable baselines.
 # NET_ARCH = dict(
 #     activation_fn=th.nn.ReLU, net_arch=[128, dict(vf=[128, 64, 32, 16, 8], pi=[32, 16, 8])]
 # )  # just hidden layers. input and output layer are set automatically by stable baselines.
 NET_ARCH = dict(
-    activation_fn=th.nn.ReLU, net_arch=[1024, 512, 256, 128, 64,32,16,8]
+    activation_fn=th.nn.ReLU, net_arch=[256,256,64,8]
 )  # just hidden layers. input and output layer are set automatically by stable baselines.
 STEPS_TO_UPDATE = 1 * base.EPISODE_LEN  # after this no. of steps, the weights are updated
-
+EXPLORATION_PERIOD = 0.3
+EXPLORATION_VALUE_START = 1
+EXPLORATION_VALUE_END = 0.05
 
 def train():
     def linear_schedule(initial_value: float) -> Callable[[float], float]:
@@ -24,7 +27,7 @@ def train():
             return progress_remaining * initial_value
         return func
 
-    env_norm = base.get_env(n_episodes=EPISODES, learning_rate_start=LEARNING_RATE_START)
+    env_norm = base.get_env(n_episodes=TRAIN_EPISODES+TRAJECTORY_COLLECTING_EPISODES, learning_rate_start=LEARNING_RATE_START)
     model = DQN(
         "MlpPolicy",
         env_norm,
@@ -36,24 +39,33 @@ def train():
         gamma=DISCOUNT_FACTOR,
         #n_steps=STEPS_TO_UPDATE,
         batch_size=STEPS_TO_UPDATE,
-        learning_starts=0,
-        exploration_fraction=0.1
+        learning_starts=TRAJECTORY_COLLECTING_EPISODES * 3 * hp.NO_JOBS,
+        exploration_fraction=EXPLORATION_PERIOD,
+        exploration_final_eps=EXPLORATION_VALUE_END,
+        exploration_initial_eps=EXPLORATION_VALUE_START
     )
-    model.learn(total_timesteps=base.EPISODE_LEN * EPISODES, log_interval=1, tb_log_name="ppo")
-    model.save("model_ppo")
+    model.learn(total_timesteps=base.EPISODE_LEN * TRAIN_EPISODES, log_interval=1, tb_log_name="dqn")
+    model.save(f"model_dqn_{hp.SCHED_OBJECTIVE}_J{hp.NO_JOBS}")
     print("#############################\ntraining completed")
 
 
 def test():
-    env_norm = base.get_env(n_episodes=EPISODES, learning_rate_start=LEARNING_RATE_START)
-    model = DQN.load("model_ppo")
+    env_norm = base.get_env(n_episodes=TRAIN_EPISODES, learning_rate_start=LEARNING_RATE_START)
+    model = DQN.load(f"model_dqn_{hp.SCHED_OBJECTIVE}_J{hp.NO_JOBS}")
     obs = env_norm.reset()
+    eps = 100
+    e = 0
     while True:
         action, _states = model.predict(np.array(obs))
         obs, reward, done, info = env_norm.step(action)
         if done:
+            e += 1
+            if e == eps:
+                break
             print("TEST RESULT")
             env_norm.reset()
+    for v in base.V:
+        print(v)
 
 perform_tests = 0
 if perform_tests == 1:
