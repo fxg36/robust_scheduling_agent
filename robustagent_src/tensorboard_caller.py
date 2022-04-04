@@ -3,18 +3,30 @@ import os
 import hyperparam
 
 
-path = os.path.join(os.path.dirname(__file__), hyperparam.TENSORBOARD_LOG_PATH)
-subdirs = list(os.walk(path))
-subdirs.pop(0)
-subdirs = sorted(subdirs, key=lambda x: x[0])
+def load():
+    path = os.path.join(os.path.dirname(__file__), hyperparam.TENSORBOARD_LOG_PATH)
+    subdirs = list(map(lambda x: x[0],os.walk(path)))
+    subdirs.pop(0)
 
-sublog = subdirs[-1][0]
-logpath = sublog #path + '1'
-print(f'\n\n\nOpen tensorboard log: {logpath}\n==============================')
-tb = program.TensorBoard()
-tb.configure(argv=[None, '--logdir', logpath])
-#tb.configure(argv=[None])
+    i = 0
+    for d in subdirs:
+        print(f"[{i}] {d.split('/')[-1]}")
+        i = i+1
+    print(f"[x] REFRESH")
 
-url = tb.launch()
-print(f"\n\nTensorflow listening on: {url}")
-input('\n\n\nPress anything to stop')
+    n = str(input('\n\n\nLog numer to open: ')) # e.g. a2c_min_makespan_J4_1
+    if n.lower() == "x":
+        load()
+        
+    logdir = subdirs[int(n)]
+
+    print(f'\n\n\nOpen tensorboard log: {logdir}\n==============================')
+    tb = program.TensorBoard()
+    tb.configure(argv=[None, '--logdir', logdir])
+    #tb.configure(argv=[None])
+
+    url = tb.launch()
+    print(f"\n\nTensorflow listening on: {url}")
+    input('\n\n\nPress anything to stop')
+
+load()

@@ -7,7 +7,7 @@ import data as d
 import flowshop_milp as milp
 import precedence_diagram_method
 import hyperparam as hp
-
+from process_spawner import ProcessSpawner
 
 class SimJob:
     def __init__(
@@ -184,6 +184,34 @@ class FlowshopSimulation:
             precedence_diagram_method.calc_slack(self.logs),
         )
 
+def experiment_process(pid, param, output):
+    res = []
+    n = param['n_experiments']
+    jobs = param['jobs']
+    obj_value = param['obj_value']
+    start_times = param['start_times']
+
+    for i in range(n):
+        sim = FlowshopSimulation(jobs, start_times, fire_dynamic_events=True)
+        sim.env.run(until=sim.meta_proc)
+        com, stab_com_sum, dur, stab_dur_sum, slack = sim.get_stability_metrices()
+        res.append(
+            {
+                "robustness": obj_value - sim.kpis[hp.SCHED_OBJECTIVE],
+                "stability_completion": stab_com_sum,
+                "stability_duration": stab_dur_sum,
+                "completions": com,
+                "durations": dur,
+                "free_slack": slack["free_slack"],
+                "total_slack": slack["total_slack"],
+                "makespan": sim.kpis[milp.Objective.CMAX],
+                "flowtime": sim.kpis[milp.Objective.F],
+                "machine_wait_time_ratio": sim.kpis['machine_waittime_ratio']
+            }
+        )
+        if pid == 1 and i > 0 and i % 1000 == 0:
+            print(i)
+    return res
 
 def run_monte_carlo_experiments(
     objective_value,
@@ -196,27 +224,36 @@ def run_monte_carlo_experiments(
     stability := indicator, of how realistically the operation process times were estimated.
     (0: realistic durations, >0: schedule too conservative, <0: schedule too optimistic)
     """
-    monte_carlo_results = []
-    for i in range(n_experiments):
-        sim = FlowshopSimulation(jobs, start_times, fire_dynamic_events=True)
-        sim.env.run(until=sim.meta_proc)
-        com, stab_com_sum, dur, stab_dur_sum, slack = sim.get_stability_metrices()
-        monte_carlo_results.append(
-            {
-                "robustness": objective_value - sim.kpis[hp.SCHED_OBJECTIVE],
-                "stability_completion": stab_com_sum,
-                "stability_duration": stab_dur_sum,
-                "completions": com,
-                "durations": dur,
-                "free_slack": slack["free_slack"],
-                "total_slack": slack["total_slack"],
-                "makespan": sim.kpis[milp.Objective.CMAX],
-                "flowtime": sim.kpis[milp.Objective.F],
-                "machine_wait_time_ratio": sim.kpis['machine_waittime_ratio']
-            }
-        )
-        if i > 0 and i % 1000 == 0:
-            print(i)
+    ps:ProcessSpawner
+    ps = ProcessSpawner.instances['montecarlo']
+    ps.clear_outputs()
+    ps.params['n_experiments'] = int(round(n_experiments / hp.CPU_CORES))
+    ps.params['jobs'] = jobs
+    ps.params['start_times'] = start_times
+    ps.params['obj_value'] = objective_value
+    monte_carlo_results = ps.await_processes()
+
+    # monte_carlo_results = []
+    # for i in range(n_experiments):
+    #     sim = FlowshopSimulation(jobs, start_times, fire_dynamic_events=True)
+    #     sim.env.run(until=sim.meta_proc)
+    #     com, stab_com_sum, dur, stab_dur_sum, slack = sim.get_stability_metrices()
+    #     monte_carlo_results.append(
+    #         {
+    #             "robustness": objective_value - sim.kpis[hp.SCHED_OBJECTIVE],
+    #             "stability_completion": stab_com_sum,
+    #             "stability_duration": stab_dur_sum,
+    #             "completions": com,
+    #             "durations": dur,
+    #             "free_slack": slack["free_slack"],
+    #             "total_slack": slack["total_slack"],
+    #             "makespan": sim.kpis[milp.Objective.CMAX],
+    #             "flowtime": sim.kpis[milp.Objective.F],
+    #             "machine_wait_time_ratio": sim.kpis['machine_waittime_ratio']
+    #         }
+    #     )
+    #     if i > 0 and i % 1000 == 0:
+    #         print(i)
     mean_job_duration = {}
     std_job_duration = {}
     mean_job_completion = {}
@@ -234,6 +271,7 @@ def run_monte_carlo_experiments(
     [ts_joined.extend(d) for d in map(lambda x: list(x["free_slack"].items()), monte_carlo_results)]
     [fs_joined.extend(d) for d in map(lambda x: list(x["total_slack"].items()), monte_carlo_results)]
     
+    machine_nos = []
     for job_no in jobs.keys():
         dur_job = list(filter(lambda x: x[0][0] == job_no, durs_joined))
         comp_job = list(filter(lambda x: x[0][0] == job_no, comps_joined))
@@ -241,6 +279,7 @@ def run_monte_carlo_experiments(
         fs_job = list(filter(lambda x: x[0][0] == job_no, fs_joined))
 
         for machine_no in set(map(lambda x: x[0][1], dur_job)):
+            machine_nos.append(machine_no)
             dur_machine = list(map(lambda y: y[1], filter(lambda x: x[0][1] == machine_no, dur_job)))
             comp_machine = list(map(lambda y: y[1], filter(lambda x: x[0][1] == machine_no, comp_job)))
             ts_machine = list(map(lambda y: y[1], filter(lambda x: x[0][1] == machine_no, ts_job)))
@@ -255,7 +294,8 @@ def run_monte_carlo_experiments(
             std_job_totalslack[job_no, machine_no] = np.std(ts_machine)
 
     machine_wait_time_ratio_mean = {}
-    for machine_no in sim.machine_nos:
+    machine_nos = set(machine_nos)
+    for machine_no in machine_nos:
         machine_wait_time_ratio_mean[machine_no] =  np.mean(list(map(lambda x: x["machine_wait_time_ratio"][machine_no], monte_carlo_results)))
 
     return {
