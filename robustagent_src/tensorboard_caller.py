@@ -14,7 +14,7 @@ def load():
         i = i+1
     print(f"[x] REFRESH")
 
-    n = str(input('\n\n\nLog numer to open: ')) # e.g. a2c_min_makespan_J4_1
+    n = str(input('\n\n\nLog numer to open: '))
     if n.lower() == "x":
         load()
         
@@ -27,6 +27,11 @@ def load():
 
     url = tb.launch()
     print(f"\n\nTensorflow listening on: {url}")
-    input('\n\n\nPress anything to stop')
+
+    n = str(input('\n\n\n[x] to reload or anything else to stop'))
+    if n.lower() == "x":
+        load()
+
+
 
 load()

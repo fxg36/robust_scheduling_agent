@@ -4,6 +4,7 @@ import flowshop_milp as milp
 from math import exp
 import hyperparam as hp
 import rl_agent_base as base
+from robustness_evaluator import RobustnessEvaluator
 
 NO_ITERATIONS = 50
 NO_MAX_ATTEMPTS = 5
@@ -40,7 +41,7 @@ def sa_method(
     ev = bs.evaluator
     best = (ev.job_dict, ev.initial_start_times)
     best_eval = (
-        ev.calc_fittness(
+        RobustnessEvaluator.calc_fittness(
             ev.initial_stats["r_mean"],
             ev.initial_stats["scom_mean"],
             ev.initial_stats["r_mean"],

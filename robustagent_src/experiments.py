@@ -1,4 +1,3 @@
-from multiprocessing import freeze_support
 import hyperparam as hp
 from process_spawner import ProcessSpawner
 import rl_agent_a2c as a2c
@@ -8,14 +7,29 @@ import flowshhop_simulation as sim
 import simulated_annealing as sa
 
 def sars1_ms():
+    hp.SCHED_OBJECTIVE = milp.Objective.F
+    hp.WEIGHT_ROBUSTNESS = 0.85
     sa_type = 0 # 0 = add slack times, 1 = create neighbour
     sa.sa_method(sa_type, do_print=True)
 
-def train_ms():
-    hp.N_JOBS = 4
+def train_drl():
+    hp.SAMPLES_TO_LOAD = 6
     hp.SCHED_OBJECTIVE = milp.Objective.CMAX
-    ppo.train(lr_start=0.0004, gamma=0.96, training_steps=6000, steps_per_update=12)
-    #a2c.train(lr_start=0.0005, gamma=0.98, training_steps=60000, steps_per_update=10)
+    hp.WEIGHT_ROBUSTNESS = 0.15
+    hp.NO_MONTE_CARLO_EXPERIMENTS = 200
+    ppo.train(lr_start=0.00005, gamma=1, training_steps=6300, steps_per_update=18)
+    #a2c.train(lr_start=0.001, gamma=1, training_steps=6300, steps_per_update=18)
+
+    hp.SCHED_OBJECTIVE = milp.Objective.F
+    hp.WEIGHT_ROBUSTNESS = 0.85
+    #ppo.train(lr_start=0.0001, gamma=1, training_steps=6300, steps_per_update=18)
+    #a2c.train(lr_start=0.001, gamma=1, training_steps=6300, steps_per_update=18) 
+
+def test_drl():
+    hp.SAMPLES_TO_LOAD = 6
+    hp.SCHED_OBJECTIVE = milp.Objective.CMAX
+    hp.WEIGHT_ROBUSTNESS = 0.15
+    ppo.test(test_episodes=20, result_suffix='4')
 
 # Train A2C MS model with 4 jobs
 # Train A2C FT model with 4 jobs
@@ -48,5 +62,6 @@ def enable_multiproc():
 
 if __name__ == '__main__':
     enable_multiproc()
-    train_ms()
+    #train_drl()
+    test_drl()
     #sars1_ms()
