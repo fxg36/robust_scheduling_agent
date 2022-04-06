@@ -71,7 +71,9 @@ def solve(objective: Objective, input):
         ft = pulp.LpVariable(objective, lowBound=0, cat=pulp.LpInteger)
         model += ft
         model += pulp.lpSum([x[i][no_machines] + processing_time[i, no_machines] for i in range(1, no_jobs + 1)]) <= ft
-
+    else:
+        raise Exception('objective not defined')
+        
     """
     CONSTRAINTS
     """

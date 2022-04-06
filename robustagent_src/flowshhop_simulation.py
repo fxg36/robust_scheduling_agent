@@ -189,6 +189,7 @@ def experiment_process(pid, param, output):
     n = param['n_experiments']
     jobs = param['jobs']
     obj_value = param['obj_value']
+    obj = param['obj']
     start_times = param['start_times']
 
     for i in range(n):
@@ -197,7 +198,7 @@ def experiment_process(pid, param, output):
         com, stab_com_sum, dur, stab_dur_sum, slack = sim.get_stability_metrices()
         res.append(
             {
-                "robustness": obj_value - sim.kpis[hp.SCHED_OBJECTIVE],
+                "robustness": obj_value - sim.kpis[obj],
                 "stability_completion": stab_com_sum,
                 "stability_duration": stab_dur_sum,
                 "completions": com,
@@ -215,6 +216,7 @@ def experiment_process(pid, param, output):
 
 def run_monte_carlo_experiments(
     objective_value,
+    objective,
     jobs,
     start_times,
     n_experiments = hp.NO_MONTE_CARLO_EXPERIMENTS
@@ -231,6 +233,7 @@ def run_monte_carlo_experiments(
     ps.params['jobs'] = jobs
     ps.params['start_times'] = start_times
     ps.params['obj_value'] = objective_value
+    ps.params['obj'] = objective
     monte_carlo_results = ps.await_processes()
 
     # monte_carlo_results = []

@@ -15,21 +15,23 @@ def sars1_ms():
 def train_drl():
     hp.SAMPLES_TO_LOAD = 6
     hp.SCHED_OBJECTIVE = milp.Objective.CMAX
-    hp.WEIGHT_ROBUSTNESS = 0.15
-    hp.NO_MONTE_CARLO_EXPERIMENTS = 200
-    ppo.train(lr_start=0.00005, gamma=1, training_steps=6300, steps_per_update=18)
-    #a2c.train(lr_start=0.001, gamma=1, training_steps=6300, steps_per_update=18)
+    hp.WEIGHT_ROBUSTNESS = 0.2
+    hp.NO_MONTE_CARLO_EXPERIMENTS = 320
+    #ppo.train(lr_start=0.0001, gamma=0.99, training_steps=9000, steps_per_update=18)
+    #a2c.train(lr_start=0.001, gamma=0.99, training_steps=9000, steps_per_update=18)
 
-    hp.SCHED_OBJECTIVE = milp.Objective.F
-    hp.WEIGHT_ROBUSTNESS = 0.85
-    #ppo.train(lr_start=0.0001, gamma=1, training_steps=6300, steps_per_update=18)
-    #a2c.train(lr_start=0.001, gamma=1, training_steps=6300, steps_per_update=18) 
+    hp.SCHED_OBJECTIVE = milp.Objective.T
+    hp.NO_MONTE_CARLO_EXPERIMENTS = 320
+    hp.WEIGHT_ROBUSTNESS = 0.5
+    #ppo.train(lr_start=0.0001, gamma=0.99, training_steps=9000, steps_per_update=18)
+    a2c.train(lr_start=0.001, gamma=0.99, training_steps=9000, steps_per_update=18) 
 
 def test_drl():
-    hp.SAMPLES_TO_LOAD = 6
+    hp.SAMPLES_TO_LOAD = 4
     hp.SCHED_OBJECTIVE = milp.Objective.CMAX
     hp.WEIGHT_ROBUSTNESS = 0.15
-    ppo.test(test_episodes=20, result_suffix='4')
+    hp.NO_MONTE_CARLO_EXPERIMENTS = 400
+    ppo.test(test_episodes=50, result_suffix='4')
 
 # Train A2C MS model with 4 jobs
 # Train A2C FT model with 4 jobs
@@ -62,6 +64,6 @@ def enable_multiproc():
 
 if __name__ == '__main__':
     enable_multiproc()
-    #train_drl()
-    test_drl()
+    train_drl()
+    #test_drl()
     #sars1_ms()

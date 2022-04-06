@@ -18,7 +18,7 @@ from pathlib import Path
 import torch as th
 
 NO_OBSERVATION_FEATURES = 18
-NO_ACTIONS = 5  # = factor to stretch processing times. chosen by the agent for each task
+NO_ACTIONS = 4  # = factor to stretch processing times. chosen by the agent for each task
 NET_ARCH = dict(
     activation_fn=th.nn.ReLU, net_arch=[512, dict(vf=[128, 64], pi=[64])]
 )  # just hidden layers. input and output layer are set automatically by stable baselines.
@@ -52,6 +52,7 @@ def load_samples(n):
         try:
             with open(p, "rb") as f:
                 samples = pickle.load(f)
+            return samples
             return [samples[0]]
         except:
             generate_samples(n)
@@ -99,7 +100,7 @@ def test(env_norm, model, model_name, result_file_suffix, test_episodes=100):
             if e == test_episodes:
                 break
             env_norm.reset()
-    
+
     Result.write_results(model_name, result_file_suffix)
 
 
@@ -115,7 +116,7 @@ class RobustFlowshopGymEnv(gym.Env):
         self.curr_step_overall = 0
         self.n_steps_overall = n_steps
         self.initial_learning_rate = initial_learning_rate
-        #self.results = []
+        # self.results = []
         self._set_initial_state()
 
     def _set_initial_state(self):
@@ -131,14 +132,15 @@ class RobustFlowshopGymEnv(gym.Env):
         self.slack_log = []
         jobs_p1 = len(list(filter(lambda x: x == "p1", map(lambda x: x[5], self.curr_candidate.job_dict.values()))))
         self.state_dict = {
-            "conservative_schedule": 1 if self.mc["r_mean"] > 0 else 0,
+            "robustness_rel": self.mc["r_mean"] * self.n_tasks,
+            "stability_rel": self.mc["scom_mean"] / self.n_tasks,
+            "makespan_rel": self.mc["makespan_mean"] / self.n_tasks,
+            "flowtime_rel": self.mc["flowtime_mean"] / self.n_tasks,
+            # "totalslack_mean": self.mc["mean_total_slack"],
+            # "freeslack_mean": self.mc["mean_free_slack"],
             "n_jobs": self.n_jobs,
             "products_std": np.std([jobs_p1, self.n_jobs - jobs_p1]),
-            "flowtime_rel": self.mc["flowtime_mean"] / self.n_tasks,
-            "makespan_rel": self.mc["makespan_mean"] / self.n_tasks,
-            "totalslack_mean": self.mc["mean_total_slack"],
-            "freeslack_mean": self.mc["mean_free_slack"],
-            "final_result": 0,
+            # "final_result": 0,
         }
         self._update_state()
 
@@ -148,16 +150,24 @@ class RobustFlowshopGymEnv(gym.Env):
             job_task = self.curr_candidate.task_order[self.curr_episode_step]
             job = job_task[0]
             machine = job_task[1]
+            job_dict_entry = self.curr_candidate.job_dict[job]
+            due_date = job_dict_entry[3]
+            max_due_date = max(map(lambda x: x[3], self.curr_candidate.job_dict.values()))
+            self.state_dict["due_date_rel"] = due_date / max_due_date
+
             machine_dummies = pd.get_dummies(pd.Series([1, 2, 3])).values
             machine_dummy = machine_dummies[machine - 1]
             for i in range(len(machine_dummy)):
                 self.state_dict[f"machine_{i}"] = machine_dummy[i]
             self.state_dict["product"] = 0 if self.curr_candidate.job_dict[job][5] == "p1" else 1
 
-
-            self.state_dict["operation_totalslack"] = self.mc["total_slack_mean_job"][job_task]
-            self.state_dict["operation_freeslack"] = self.mc["free_slack_mean_job"][job_task]
-
+            self.state_dict["operation_totalslack_above_avg"] = (
+                1 if self.mc["total_slack_mean_job"][job_task] > self.mc["mean_total_slack"] else 0
+            )
+            self.state_dict["operation_freeslack_above_avg"] = (
+                1 if self.mc["free_slack_mean_job"][job_task] > self.mc["mean_free_slack"] else 0
+            )
+            self.state_dict["critical_path"] = self.mc["total_slack_mean_job"][job_task] == 0
 
             successors = self.curr_candidate.task_order[self.curr_episode_step + 1 :]
             successors_same_machine = list(filter(lambda x: x[1] == machine, successors))
@@ -172,10 +182,10 @@ class RobustFlowshopGymEnv(gym.Env):
             # self.state_dict["third_quarter_of_schedule"] = 1 if step_rel > 2 / 4 and step_rel <= 3 / 4 else 0
             # self.state_dict["last_operation_slack_added"] = 0 if len(self.slack_log) < 2 or self.slack_log[-2] == 0 else 1
 
-        if last:
-            self.state_dict["final_result"] = final_result
-            # self.state_dict["r_final"] = abs(stats['r_mean']) / self.mc["makespan_mean"]
-            # self.state_dict["s_final"] = stats['scom_mean'] / self.mc["makespan_mean"]
+        # if last:
+        #     # self.state_dict["final_result"] = final_result
+        #     # self.state_dict["r_final"] = abs(stats['r_mean']) / self.mc["makespan_mean"]
+        #     # self.state_dict["s_final"] = stats['scom_mean'] / self.mc["makespan_mean"]
 
         self.state = list(self.state_dict.values())
         assert len(self.state) == NO_OBSERVATION_FEATURES, str(
@@ -191,36 +201,74 @@ class RobustFlowshopGymEnv(gym.Env):
         assert task_dur_std >= 0, "std must be positive"
         slack_to_append = 0
 
-        if action == 0: # use expected value
-            if low_slack: 
-                if critical_path:
-                    reward += -1 / self.n_tasks 
-
-        elif action == 1:  # extend little
-            slack_to_append = task_dur_std / 4 
-            if high_slack:
-                reward += -1 / self.n_tasks
-
-        elif action == 2:  # extend more
-            slack_to_append = task_dur_std / 2
-            if high_slack:
-                reward += 2 / self.n_tasks
-
-        elif action == 3:  # compress little
-            slack_to_append = -task_dur_std / 4
+        if action == 0:  # use expected value
             if low_slack:
                 if critical_path:
-                    reward += 2 / self.n_tasks
-                else:
-                    reward += 1 / self.n_tasks
+                    reward += -5 / self.n_tasks
 
-        elif action == 4:  # compress more
+        if action == 1:  # compress more
             slack_to_append = -task_dur_std / 2
             if low_slack:
                 if critical_path:
-                    reward += 3 / self.n_tasks
-                else:
-                    reward += 2 / self.n_tasks
+                    reward += -10 / self.n_tasks
+                # else:
+                #     reward += -5 / self.n_tasks
+
+        elif action == 2:  # extend more
+            slack_to_append = task_dur_std / 4
+            if high_slack:
+                reward += -10 / self.n_tasks
+
+        elif action == 3:  # extend less
+            slack_to_append = task_dur_std / 8
+            if high_slack:
+                reward += -5 / self.n_tasks
+
+        # wr = hp.WEIGHT_ROBUSTNESS
+        # ws = 1-wr
+        # assert ws+wr == 1, "this must be 1!"
+
+        # if action in [2,3]: # extending operation
+        #     reward += -20 * ws / self.n_tasks
+
+        # elif action in [1]: # compressing operation
+        #     reward += -20 * wr / self.n_tasks
+
+        # if hp.WEIGHT_ROBUSTNESS < 0.5 and action in [2,3]:
+        #     reward += -10 * (1-hp.WEIGHT_ROBUSTNESS) / self.n_tasks
+        # elif hp.WEIGHT_ROBUSTNESS > 0.5 and action in [1]:
+        #     reward += -10 * hp.WEIGHT_ROBUSTNESS / self.n_tasks
+
+        # if action == 0: # use expected value
+        #     if low_slack:
+        #         if critical_path:
+        #             reward += -1 / self.n_tasks
+
+        # elif action == 1:  # extend little
+        #     slack_to_append = task_dur_std / 4
+        #     if high_slack:
+        #         reward += -1 / self.n_tasks
+
+        # elif action == 2:  # extend more
+        #     slack_to_append = task_dur_std / 2
+        #     if high_slack:
+        #         reward += 2 / self.n_tasks
+
+        # elif action == 3:  # compress little
+        #     slack_to_append = -task_dur_std / 4
+        #     if low_slack:
+        #         if critical_path:
+        #             reward += 2 / self.n_tasks
+        #         else:
+        #             reward += 1 / self.n_tasks
+
+        # elif action == 4:  # compress more
+        #     slack_to_append = -task_dur_std / 2
+        #     if low_slack:
+        #         if critical_path:
+        #             reward += 3 / self.n_tasks
+        #         else:
+        #             reward += 2 / self.n_tasks
 
         return slack_to_append, reward
 
@@ -231,7 +279,6 @@ class RobustFlowshopGymEnv(gym.Env):
         task_to_modify = next(filter(lambda x: isinstance(x, list) and x[0] == task, self.modified_jobs[job]))
 
         slack_to_append, reward = self.perform_action(action, job_task)
-        reward = 0
 
         # stretch or extend task
         task_to_modify[1] = int(round(task_to_modify[1] + slack_to_append))
@@ -260,13 +307,11 @@ class RobustFlowshopGymEnv(gym.Env):
         reward = y * -100
 
         actions = list(map(lambda x: x[0], self.action_log))
-        
 
         interim_rewards = sum(list(map(lambda x: x[1], self.action_log)))
         action_std = np.std(actions)
         # if action_std == 0:
         #     reward = -125
-
 
         lr = self.initial_learning_rate * ((self.n_steps_overall - self.curr_step_overall) / self.n_steps_overall)
         print(

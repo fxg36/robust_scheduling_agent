@@ -17,7 +17,7 @@ def train(lr_start: float, gamma: float, training_steps: int, steps_per_update: 
         learning_rate=base.linear_schedule(lr_start),
         gamma=gamma,
         n_steps=steps_per_update,
-        batch_size=steps_per_update,
+        #batch_size=steps_per_update,
     )
     base.train(model, 'ppo', training_steps)
 

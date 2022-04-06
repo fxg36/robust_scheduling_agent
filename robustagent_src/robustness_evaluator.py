@@ -18,7 +18,7 @@ def simulate_deterministic_bs_schedule(job_dict, start_times):
 
 def get_initial_stochastic_infos(obj_value, job_dict, start_times):
     return sim.run_monte_carlo_experiments(
-            obj_value, job_dict, start_times, n_experiments=10000
+            obj_value, hp.SCHED_OBJECTIVE, job_dict, start_times, n_experiments=10000
         )
 
 class Result:
@@ -77,8 +77,13 @@ class RobustnessEvaluator:
     @staticmethod
     def calc_fittness(r, s, r_base, s_base):
         wr = hp.WEIGHT_ROBUSTNESS
+        assert (
+            hp.WEIGHT_ROBUSTNESS >= 0 and hp.WEIGHT_ROBUSTNESS <= 1
+        ), "WEIGHT_ROBUSTNESS is greater 1 or lower 0. This is not allowed!"
+
         ws = 1 - wr
         fit = (abs(r) * wr + s * ws) / (abs(r_base) * wr + s_base * ws)
+        #fit = abs(r) / abs(r_base) * wr + s / s_base * ws
         Result.results.append(Result(rsv=fit, s=s, r=r, s_base=s_base, r_base=r_base))
         return fit
         # robustness_rel = (abs(r)) / (abs(r_base)) * hp.WEIGHT_ROBUSTNESS
@@ -92,12 +97,12 @@ class RobustnessEvaluator:
 
         if start_times != None:
             bs = simulate_deterministic_bs_schedule(candidate_job_dict, start_times)
-            res = sim.run_monte_carlo_experiments(bs[hp.SCHED_OBJECTIVE], candidate_job_dict, start_times)
+            res = sim.run_monte_carlo_experiments(bs[hp.SCHED_OBJECTIVE], hp.SCHED_OBJECTIVE, candidate_job_dict, start_times, n_experiments=hp.NO_MONTE_CARLO_EXPERIMENTS)
         else:
             bs = simulate_deterministic_bs_schedule(candidate_job_dict, self.initial_start_times)
             #assert bs[hp.SCHED_OBJECTIVE] == self.initial_objective_value, 'must be true if all actions are [0]'
             res = sim.run_monte_carlo_experiments(
-                bs[hp.SCHED_OBJECTIVE], candidate_job_dict, self.initial_start_times
+                bs[hp.SCHED_OBJECTIVE], hp.SCHED_OBJECTIVE, candidate_job_dict, self.initial_start_times, n_experiments=hp.NO_MONTE_CARLO_EXPERIMENTS
             )
         fit = RobustnessEvaluator.calc_fittness(res["r_mean"], res["scom_mean"], self.initial_robustness, self.initial_stability)
         return fit, res
