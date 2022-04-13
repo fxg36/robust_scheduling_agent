@@ -97,12 +97,12 @@ class RobustnessEvaluator:
 
         if start_times != None:
             bs = simulate_deterministic_bs_schedule(candidate_job_dict, start_times)
-            res = sim.run_monte_carlo_experiments(bs[hp.SCHED_OBJECTIVE], hp.SCHED_OBJECTIVE, candidate_job_dict, start_times, n_experiments=hp.NO_MONTE_CARLO_EXPERIMENTS)
+            res = sim.run_monte_carlo_experiments(bs[hp.SCHED_OBJECTIVE], hp.SCHED_OBJECTIVE, candidate_job_dict, start_times, n_experiments=hp.N_MONTE_CARLO_EXPERIMENTS)
         else:
             bs = simulate_deterministic_bs_schedule(candidate_job_dict, self.initial_start_times)
             #assert bs[hp.SCHED_OBJECTIVE] == self.initial_objective_value, 'must be true if all actions are [0]'
             res = sim.run_monte_carlo_experiments(
-                bs[hp.SCHED_OBJECTIVE], hp.SCHED_OBJECTIVE, candidate_job_dict, self.initial_start_times, n_experiments=hp.NO_MONTE_CARLO_EXPERIMENTS
+                bs[hp.SCHED_OBJECTIVE], hp.SCHED_OBJECTIVE, candidate_job_dict, self.initial_start_times, n_experiments=hp.N_MONTE_CARLO_EXPERIMENTS
             )
         fit = RobustnessEvaluator.calc_fittness(res["r_mean"], res["scom_mean"], self.initial_robustness, self.initial_stability)
         return fit, res

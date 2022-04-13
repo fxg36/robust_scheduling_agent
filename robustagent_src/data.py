@@ -1,4 +1,5 @@
 import random
+import hyperparam as hp
 
 
 class Product1:
@@ -77,53 +78,70 @@ class JobFactory:
         return job_array
 
     @staticmethod
-    def preprocess_jobs(jobs_raw):
+    def preprocess_one_operation(jobs_raw, job_id, machine_id, do_round=True):
+        def get_dist_values(product, machine):
+            if machine == 1:
+                b = (
+                    MachineFailure.M1MaintenanceEffort[0],
+                    MachineFailure.M1MaintenanceEffort[1],
+                    MachineFailure.M1MaintenanceEffort[2],
+                )
+                p = MachineFailure.M1FailureProb
+                if product == "p1":
+                    a = (Product1.M1Duration[0], Product1.M1Duration[1], Product1.M1Duration[2])
+                else:
+                    a = (Product2.M1Duration[0], Product2.M1Duration[1], Product2.M1Duration[2])
+            elif machine == 2:
+                b = (
+                    MachineFailure.M2MaintenanceEffort[0],
+                    MachineFailure.M2MaintenanceEffort[1],
+                    MachineFailure.M2MaintenanceEffort[2],
+                )
+                p = MachineFailure.M2FailureProb
+                if product == "p1":
+                    a = (Product1.M2Duration[0], Product1.M2Duration[1], Product1.M2Duration[2])
+                else:
+                    a = (Product2.M2Duration[0], Product2.M2Duration[1], Product2.M2Duration[2])
+            else:  # 3
+                b = (
+                    MachineFailure.M3MaintenanceEffort[0],
+                    MachineFailure.M3MaintenanceEffort[1],
+                    MachineFailure.M3MaintenanceEffort[2],
+                )
+                p = MachineFailure.M3FailureProb
+                if product == "p1":
+                    a = (Product1.M3Duration[0], Product1.M3Duration[1], Product1.M3Duration[2])
+                else:
+                    a = (Product2.M3Duration[0], Product2.M3Duration[1], Product2.M3Duration[2])
+
+            def e(tuple):
+                return (tuple[0] + tuple[1] + tuple[2]) / 3
+
+            def std(tuple):
+                return ((tuple[0] - tuple[2]) ** 2 + (tuple[2] - tuple[1]) ** 2 + (tuple[0] - tuple[1]) ** 2) ** 0.5 / 6
+
+            return e(a) - p * e(b), \
+                e(a), \
+                e(a) + p * e(b), \
+                e(a) + p * e(b) + std(a)/4 + p * std(b)/4, \
+                e(a) + p * e(b) + std(a)/1 + p * std(b)/1
+
+        job = jobs_raw[job_id - 1]
+        product = product = job[5]
+        values = get_dist_values(product, machine_id)
+        values = sorted(list(values))
+
+        if do_round:
+            values = list(map(lambda x: int(round(x)), values))
+
+        return values
+
+    @staticmethod
+    def preprocess_jobs(jobs_raw, do_round=True):
         """ use expected values for the operation durations. include uncertain processing times and machine failure probabilities. """
-        i = 0
+
         for job in jobs_raw:
+            job_id = jobs_raw.index(job) + 1
             for task in filter(lambda x: isinstance(x, list), job):
-                if job[5] == "p1":
-                    if task[0] == 1:
-                        task[1] = int(
-                            round(
-                                Product1.M1DurationExp
-                                + MachineFailure.M1FailureProb * MachineFailure.M1MaintenanceEffortExp
-                            )
-                        )
-                    elif task[0] == 2:
-                        task[1] = int(
-                            round(
-                                Product1.M2DurationExp
-                                + MachineFailure.M2FailureProb * MachineFailure.M2MaintenanceEffortExp
-                            )
-                        )
-                    elif task[0] == 3:
-                        task[1] = int(
-                            round(
-                                Product1.M3DurationExp
-                                + MachineFailure.M3FailureProb * MachineFailure.M3MaintenanceEffortExp
-                            )
-                        )
-                elif job[5] == "p2":
-                    if task[0] == 1:
-                        task[1] = int(
-                            round(
-                                Product2.M1DurationExp
-                                + MachineFailure.M1FailureProb * MachineFailure.M1MaintenanceEffortExp
-                            )
-                        )
-                    elif task[0] == 2:
-                        task[1] = int(
-                            round(
-                                Product2.M2DurationExp
-                                + MachineFailure.M2FailureProb * MachineFailure.M2MaintenanceEffortExp
-                            )
-                        )
-                    elif task[0] == 3:
-                        task[1] = int(
-                            round(
-                                Product2.M3DurationExp
-                                + MachineFailure.M3FailureProb * MachineFailure.M3MaintenanceEffortExp
-                            )
-                        )
-            i += 1
+                val = JobFactory.preprocess_one_operation(jobs_raw, job_id=job_id, machine_id=task[0], do_round=do_round)
+                task[1] = val[2]

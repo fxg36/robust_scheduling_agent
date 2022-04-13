@@ -141,7 +141,7 @@ class FlowshopSimulation:
                     wratios[machine_no] = w / (m_end-m_start)
                 self.kpis["machine_waittime_ratio"] = wratios 
                 return
-            yield self.env.timeout(1)
+            yield self.env.timeout(hp.SIM_TIMEOUT)
 
     def _machine_process(self, machine_no: int, processing_order: List[int]):
         while True:
@@ -219,7 +219,7 @@ def run_monte_carlo_experiments(
     objective,
     jobs,
     start_times,
-    n_experiments = hp.NO_MONTE_CARLO_EXPERIMENTS
+    n_experiments = hp.N_MONTE_CARLO_EXPERIMENTS
 ):
     """run several experiments to validate the schedule regarding robustness and stability.
     robustness := effectiveness regarding the objective (0: realistic predictive schedule, >0: schedule too conservative, <0: schedule too optimistic)

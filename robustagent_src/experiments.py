@@ -16,44 +16,23 @@ def train_drl():
     hp.SAMPLES_TO_LOAD = 6
     hp.SCHED_OBJECTIVE = milp.Objective.CMAX
     hp.WEIGHT_ROBUSTNESS = 0.2
-    hp.NO_MONTE_CARLO_EXPERIMENTS = 320
+    hp.N_MONTE_CARLO_EXPERIMENTS = 600
     #ppo.train(lr_start=0.0001, gamma=0.99, training_steps=9000, steps_per_update=18)
     #a2c.train(lr_start=0.001, gamma=0.99, training_steps=9000, steps_per_update=18)
 
-    hp.SCHED_OBJECTIVE = milp.Objective.T
-    hp.NO_MONTE_CARLO_EXPERIMENTS = 320
+    hp.SCHED_OBJECTIVE = milp.Objective.F
+    hp.N_MONTE_CARLO_EXPERIMENTS = 600
     hp.WEIGHT_ROBUSTNESS = 0.5
-    #ppo.train(lr_start=0.0001, gamma=0.99, training_steps=9000, steps_per_update=18)
-    a2c.train(lr_start=0.001, gamma=0.99, training_steps=9000, steps_per_update=18) 
+    ppo.train(lr_start=0.0001, gamma=0.99, training_steps=9000, steps_per_update=18)
+    #a2c.train(lr_start=0.001, gamma=0.99, training_steps=9000, steps_per_update=18) 
 
 def test_drl():
-    hp.SAMPLES_TO_LOAD = 4
-    hp.SCHED_OBJECTIVE = milp.Objective.CMAX
-    hp.WEIGHT_ROBUSTNESS = 0.15
-    hp.NO_MONTE_CARLO_EXPERIMENTS = 400
-    ppo.test(test_episodes=50, result_suffix='4')
+    hp.SAMPLES_TO_LOAD = 8
+    hp.SCHED_OBJECTIVE = milp.Objective.F
+    hp.WEIGHT_ROBUSTNESS = 0.5
+    hp.N_MONTE_CARLO_EXPERIMENTS = 600
+    ppo.test(test_episodes=50, result_suffix='4', sample_ids=None)
 
-# Train A2C MS model with 4 jobs
-# Train A2C FT model with 4 jobs
-# Train PPO MS model with 4 jobs
-# Train PPO FT model with 4 jobs
-
-# Test A2C models on 4, 6 and 8 jobs
-
-# Test PPO models on 4, 6 and 8 jobs
-
-
-# Train PPO MS model with 4,6,8 jobs
-
-# Test PPO models on 4, 6 and 8 jobs
-
-# pick random samples to benchmark SARS
-
-# PPO (1 pred) - 4,6,8 jobs
-# PPO (10 preds) - 4,6,8 jobs
-
-# SARS1 (10/50) - 4,6,8 jobs
-# SARS2 (10 preds) - 4,6,8 jobs
 
 def enable_multiproc():
     print("INIT PROCESS SPAWNER FOR PARALLEL COMPUTING")
@@ -67,3 +46,4 @@ if __name__ == '__main__':
     train_drl()
     #test_drl()
     #sars1_ms()
+    ProcessSpawner.instances["montecarlo"].kill_processes()

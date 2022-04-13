@@ -9,16 +9,17 @@ from gym.spaces import Box, Discrete
 import numpy as np
 import pandas as pd
 import hyperparam as hp
-from robustness_evaluator import BaselineSchedule, Result
+from robustness_evaluator import BaselineSchedule, Result, RobustnessEvaluator
 import data as d
 import flowshop_milp as milp
 from stable_baselines3.common.vec_env import VecNormalize, DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
 from pathlib import Path
 import torch as th
+from robustness_evaluator import simulate_deterministic_bs_schedule
 
-NO_OBSERVATION_FEATURES = 18
-NO_ACTIONS = 4  # = factor to stretch processing times. chosen by the agent for each task
+NO_OBSERVATION_FEATURES = 16
+NO_ACTIONS = 3  # = factor to stretch processing times. chosen by the agent for each task
 NET_ARCH = dict(
     activation_fn=th.nn.ReLU, net_arch=[512, dict(vf=[128, 64], pi=[64])]
 )  # just hidden layers. input and output layer are set automatically by stable baselines.
@@ -39,12 +40,12 @@ def generate_samples(n_jobs):
         pickle.dump(samples, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-def load_samples(n):
+def load_samples(n: int, sample_ids: List[int]) -> List[BaselineSchedule]:
     if n == 0:
         samples = []
-        samples.extend(load_samples(4))
-        samples.extend(load_samples(6))
-        samples.extend(load_samples(8))
+        samples.extend(load_samples(4, None))
+        samples.extend(load_samples(6, None))
+        samples.extend(load_samples(8, None))
         return samples
     else:
         p = Path(".")
@@ -52,15 +53,17 @@ def load_samples(n):
         try:
             with open(p, "rb") as f:
                 samples = pickle.load(f)
-            return samples
-            return [samples[0]]
+            if sample_ids == None:
+                return samples
+            else:
+                return list(filter(lambda x: samples.index(x) in sample_ids, samples))
         except:
             generate_samples(n)
             return load_samples(n)
 
 
-def get_env(n_steps, learning_rate_start=0):
-    samples = load_samples(hp.SAMPLES_TO_LOAD)
+def get_env(n_steps, learning_rate_start=0, sample_ids=None):
+    samples = load_samples(hp.SAMPLES_TO_LOAD, sample_ids)
     env = RobustFlowshopGymEnv(samples, n_steps, learning_rate_start)
     env = Monitor(env, hp.TENSORBOARD_LOG_PATH, allow_early_resets=True)
     venv = DummyVecEnv([lambda: env])
@@ -129,63 +132,77 @@ class RobustFlowshopGymEnv(gym.Env):
         self.n_tasks = self.n_jobs * 3
         self.curr_episode_step = 0
         self.action_log = []
-        self.slack_log = []
+        self.job_slack_log = []
+        self.machine_slack_log = []
         jobs_p1 = len(list(filter(lambda x: x == "p1", map(lambda x: x[5], self.curr_candidate.job_dict.values()))))
+        self.last_plan_robustness = self.mc["r_mean"]
         self.state_dict = {
-            "robustness_rel": self.mc["r_mean"] * self.n_tasks,
-            "stability_rel": self.mc["scom_mean"] / self.n_tasks,
-            "makespan_rel": self.mc["makespan_mean"] / self.n_tasks,
-            "flowtime_rel": self.mc["flowtime_mean"] / self.n_tasks,
+            "robustness_rel": self.mc["r_mean"] * self.n_jobs,
+            "stability_rel": self.mc["scom_mean"] / self.n_jobs,
+            #"makespan_rel": self.mc["makespan_mean"] / self.n_jobs,
+            #"flowtime_rel": self.mc["flowtime_mean"] / self.n_jobs,
             # "totalslack_mean": self.mc["mean_total_slack"],
             # "freeslack_mean": self.mc["mean_free_slack"],
             "n_jobs": self.n_jobs,
-            "products_std": np.std([jobs_p1, self.n_jobs - jobs_p1]),
+            #"products_std": np.std([jobs_p1, self.n_jobs - jobs_p1]),
             # "final_result": 0,
         }
         self._update_state()
 
-    def _update_state(self, last=False, stats=None, final_result=None):
-        self.state_dict["additional_slack_rel"] = sum(self.slack_log) / self.n_tasks
-        if not last:
-            job_task = self.curr_candidate.task_order[self.curr_episode_step]
-            job = job_task[0]
-            machine = job_task[1]
-            job_dict_entry = self.curr_candidate.job_dict[job]
-            due_date = job_dict_entry[3]
-            max_due_date = max(map(lambda x: x[3], self.curr_candidate.job_dict.values()))
-            self.state_dict["due_date_rel"] = due_date / max_due_date
+    def _update_state(self, last=False):
 
-            machine_dummies = pd.get_dummies(pd.Series([1, 2, 3])).values
-            machine_dummy = machine_dummies[machine - 1]
-            for i in range(len(machine_dummy)):
-                self.state_dict[f"machine_{i}"] = machine_dummy[i]
-            self.state_dict["product"] = 0 if self.curr_candidate.job_dict[job][5] == "p1" else 1
+        kpi = simulate_deterministic_bs_schedule(self.modified_jobs, self.curr_candidate.evaluator.initial_start_times)
+        self.state_dict["plan_robustness"] = (kpi[hp.SCHED_OBJECTIVE] - self.curr_candidate.evaluator.initial_objective_value) + self.mc["r_mean"]
+        #diff = (kpi[hp.SCHED_OBJECTIVE] - self.curr_candidate.evaluator.initial_objective_value)
 
-            self.state_dict["operation_totalslack_above_avg"] = (
-                1 if self.mc["total_slack_mean_job"][job_task] > self.mc["mean_total_slack"] else 0
-            )
-            self.state_dict["operation_freeslack_above_avg"] = (
-                1 if self.mc["free_slack_mean_job"][job_task] > self.mc["mean_free_slack"] else 0
-            )
-            self.state_dict["critical_path"] = self.mc["total_slack_mean_job"][job_task] == 0
+        job_task = self.curr_candidate.task_order[self.curr_episode_step if not last else self.curr_episode_step-1]
+        job = job_task[0]
+        machine = job_task[1]
+        
 
-            successors = self.curr_candidate.task_order[self.curr_episode_step + 1 :]
-            successors_same_machine = list(filter(lambda x: x[1] == machine, successors))
-            self.state_dict["n_successors_machine"] = len(successors_same_machine) / self.n_jobs
+        self.state_dict["added_slack_job"] = (
+            sum(map(lambda y: y["slack"], filter(lambda x: x["job"] == job, self.job_slack_log))) / self.n_jobs
+        )
+        self.state_dict["added_slack_machine_rel"] = (
+            sum(map(lambda y: y["slack"], filter(lambda x: x["task"] == machine, self.machine_slack_log))) / self.n_jobs
+        )
+        self.state_dict["added_slack_other_rel"] = (
+            sum(map(lambda y: y["slack"], self.machine_slack_log)) / self.n_jobs
+        ) - self.state_dict["added_slack_machine_rel"]
 
-            step_rel = (self.curr_episode_step + 1) / self.n_tasks
-            self.state_dict["step_progress"] = step_rel
+        #job_dict_entry = self.curr_candidate.job_dict[job]
+        # due_date = job_dict_entry[3]
+        # max_due_date = max(map(lambda x: x[3], self.curr_candidate.job_dict.values()))
+        # self.state_dict["due_date_rel"] = due_date / max_due_date
 
-            self.state_dict["wait_time_ratio_machine"] = self.mc["machine_wait_time_ratio_mean"][machine]
-            # self.state_dict["first_quarter_of_schedule"] = 1 if step_rel <= 1 / 4 else 0
-            # self.state_dict["second_quarter_of_schedule"] = 1 if step_rel > 1 / 4 and step_rel <= 2 / 4 else 0
-            # self.state_dict["third_quarter_of_schedule"] = 1 if step_rel > 2 / 4 and step_rel <= 3 / 4 else 0
-            # self.state_dict["last_operation_slack_added"] = 0 if len(self.slack_log) < 2 or self.slack_log[-2] == 0 else 1
+        self.state_dict["job_end_mean_rel"] = self.mc['com_mean_job'][(job,3)] / self.mc["makespan_mean"]
 
-        # if last:
-        #     # self.state_dict["final_result"] = final_result
-        #     # self.state_dict["r_final"] = abs(stats['r_mean']) / self.mc["makespan_mean"]
-        #     # self.state_dict["s_final"] = stats['scom_mean'] / self.mc["makespan_mean"]
+        machine_dummies = pd.get_dummies(pd.Series([1, 2, 3])).values
+        machine_dummy = machine_dummies[machine - 1]
+        for i in range(len(machine_dummy)):
+            self.state_dict[f"machine_{i}"] = machine_dummy[i]
+        self.state_dict["product"] = 0 if self.curr_candidate.job_dict[job][5] == "p1" else 1
+
+        self.state_dict["operation_totalslack_above_avg"] = (
+            1 if self.mc["total_slack_mean_job"][job_task] > self.mc["mean_total_slack"] else 0
+        )
+        # self.state_dict["operation_freeslack_above_avg"] = (
+        #     1 if self.mc["free_slack_mean_job"][job_task] > self.mc["mean_free_slack"] else 0
+        # )
+        self.state_dict["critical_path"] = self.mc["total_slack_mean_job"][job_task] == 0
+
+        successors = self.curr_candidate.task_order[self.curr_episode_step + 1 :]
+        successors_same_machine = list(filter(lambda x: x[1] == machine, successors))
+        self.state_dict["n_successors_machine"] = len(successors_same_machine) / self.n_jobs
+
+        step_rel = (self.curr_episode_step) / self.n_tasks
+        self.state_dict["step_progress"] = step_rel
+
+        # self.state_dict["wait_time_ratio_machine"] = self.mc["machine_wait_time_ratio_mean"][machine]
+        # self.state_dict["first_quarter_of_schedule"] = 1 if step_rel <= 1 / 4 else 0
+        # self.state_dict["second_quarter_of_schedule"] = 1 if step_rel > 1 / 4 and step_rel <= 2 / 4 else 0
+        # self.state_dict["third_quarter_of_schedule"] = 1 if step_rel > 2 / 4 and step_rel <= 3 / 4 else 0
+        # self.state_dict["last_operation_slack_added"] = 0 if len(self.slack_log) < 2 or self.slack_log[-2] == 0 else 1
 
         self.state = list(self.state_dict.values())
         assert len(self.state) == NO_OBSERVATION_FEATURES, str(
@@ -193,84 +210,34 @@ class RobustFlowshopGymEnv(gym.Env):
         )
 
     def perform_action(self, action, job_task):
-        reward = 0
-        low_slack = self.mc["total_slack_mean_job"][job_task] < self.mc["mean_total_slack"]
-        critical_path = self.mc["total_slack_mean_job"][job_task] == 0
-        high_slack = not low_slack
-        task_dur_std = self.mc["dur_std_job"][job_task]
-        assert task_dur_std >= 0, "std must be positive"
-        slack_to_append = 0
+        #reward = 0
+        #low_slack = self.mc["total_slack_mean_job"][job_task] < self.mc["mean_total_slack"]
+        #critical_path = self.mc["total_slack_mean_job"][job_task] == 0
+        #high_slack = not low_slack
+        # task_dur_std = self.mc["dur_std_job"][job_task]
+        # assert task_dur_std >= 0, "std must be positive"
+        new_duration = 0
 
-        if action == 0:  # use expected value
-            if low_slack:
-                if critical_path:
-                    reward += -5 / self.n_tasks
+        values = d.JobFactory.preprocess_one_operation(self.curr_candidate.jobs_raw, job_task[0], job_task[1])
+        default = values[1]
+        very_optimistic = values[0]
+        very_conservative = values[4]
 
-        if action == 1:  # compress more
-            slack_to_append = -task_dur_std / 2
-            if low_slack:
-                if critical_path:
-                    reward += -10 / self.n_tasks
-                # else:
-                #     reward += -5 / self.n_tasks
+        wr = hp.WEIGHT_ROBUSTNESS
+        ws = 1-wr
 
-        elif action == 2:  # extend more
-            slack_to_append = task_dur_std / 4
-            if high_slack:
-                reward += -10 / self.n_tasks
+        # use default value (expected duration incl. downtime)
+        if action == 0:
+            new_duration = default
 
-        elif action == 3:  # extend less
-            slack_to_append = task_dur_std / 8
-            if high_slack:
-                reward += -5 / self.n_tasks
+        # use exptected value without downtime (optimistic)
+        if action == 1:
+            new_duration = very_optimistic
+        # consider stdev (conservative)
+        elif action == 2:
+            new_duration = very_conservative
 
-        # wr = hp.WEIGHT_ROBUSTNESS
-        # ws = 1-wr
-        # assert ws+wr == 1, "this must be 1!"
-
-        # if action in [2,3]: # extending operation
-        #     reward += -20 * ws / self.n_tasks
-
-        # elif action in [1]: # compressing operation
-        #     reward += -20 * wr / self.n_tasks
-
-        # if hp.WEIGHT_ROBUSTNESS < 0.5 and action in [2,3]:
-        #     reward += -10 * (1-hp.WEIGHT_ROBUSTNESS) / self.n_tasks
-        # elif hp.WEIGHT_ROBUSTNESS > 0.5 and action in [1]:
-        #     reward += -10 * hp.WEIGHT_ROBUSTNESS / self.n_tasks
-
-        # if action == 0: # use expected value
-        #     if low_slack:
-        #         if critical_path:
-        #             reward += -1 / self.n_tasks
-
-        # elif action == 1:  # extend little
-        #     slack_to_append = task_dur_std / 4
-        #     if high_slack:
-        #         reward += -1 / self.n_tasks
-
-        # elif action == 2:  # extend more
-        #     slack_to_append = task_dur_std / 2
-        #     if high_slack:
-        #         reward += 2 / self.n_tasks
-
-        # elif action == 3:  # compress little
-        #     slack_to_append = -task_dur_std / 4
-        #     if low_slack:
-        #         if critical_path:
-        #             reward += 2 / self.n_tasks
-        #         else:
-        #             reward += 1 / self.n_tasks
-
-        # elif action == 4:  # compress more
-        #     slack_to_append = -task_dur_std / 2
-        #     if low_slack:
-        #         if critical_path:
-        #             reward += 3 / self.n_tasks
-        #         else:
-        #             reward += 2 / self.n_tasks
-
-        return slack_to_append, reward
+        return new_duration
 
     def step(self, action):
         job_task = self.curr_candidate.task_order[self.curr_episode_step]
@@ -278,33 +245,62 @@ class RobustFlowshopGymEnv(gym.Env):
         task = job_task[1]
         task_to_modify = next(filter(lambda x: isinstance(x, list) and x[0] == task, self.modified_jobs[job]))
 
-        slack_to_append, reward = self.perform_action(action, job_task)
+        old_duration = task_to_modify[1]
+        new_duration = self.perform_action(action, job_task)
 
         # stretch or extend task
-        task_to_modify[1] = int(round(task_to_modify[1] + slack_to_append))
-
-        self.slack_log.append(slack_to_append)
-        self.action_log.append([action, reward])
-
+        task_to_modify[1] = new_duration
+        self.job_slack_log.append({"job": job, "slack": new_duration - old_duration})
+        self.machine_slack_log.append({"task": task, "slack": new_duration - old_duration})
+        
         self.curr_episode_step += 1
         self.curr_step_overall += 1
 
+        reward = 0
         if self.curr_episode_step == self.n_tasks:
             done = True
-            reward += self.handle_episode_end()
+            reward += self.handle_episode_end(reward)
+            self._update_state(last=True)
         else:
             done = False
             self._update_state()
-
+        
+        reward += self._get_inter_reward(action)
+        
         info = {"reward": reward}
         return self.state, reward, done, info
 
-    def handle_episode_end(self):
-        v, stats = self.curr_candidate.evaluator.eval(self.modified_jobs)
-        obj = stats["makespan_mean"] if hp.SCHED_OBJECTIVE == milp.Objective.CMAX else stats["flowtime_mean"]
+    def _get_inter_reward(self, action):
+        wr = hp.WEIGHT_ROBUSTNESS
+        ws = 1-wr
+        ir = 0
 
-        y = v ** 10 if v < 1 else v * 1.25
-        reward = y * -100
+        # # use default value (expected duration incl. downtime)
+        # if action == 0:
+        #     ir -= ws*10/self.n_jobs
+
+        # use exptected value without downtime (optimistic)
+        if action == 1:
+            ir += 4*ws#ws*10/self.n_jobs
+
+        # # consider stdev (conservative)
+        # elif action == 2:
+        #     ir -= ws*20/self.n_jobs
+
+        if(abs(self.state_dict["plan_robustness"])<abs(self.last_plan_robustness)):
+            ir += 6*wr#wr*10/self.n_jobs
+        else:
+            ir -= 4*ws
+
+        self.last_plan_robustness = self.state_dict["plan_robustness"]
+        self.action_log.append([action, ir])
+
+        return ir
+
+    def handle_episode_end(self, reward):
+        v, stats = self.curr_candidate.evaluator.eval(self.modified_jobs)
+
+        reward += v ** 10 * -100 if v < 1 else v * -125
 
         actions = list(map(lambda x: x[0], self.action_log))
 
@@ -314,11 +310,10 @@ class RobustFlowshopGymEnv(gym.Env):
         #     reward = -125
 
         lr = self.initial_learning_rate * ((self.n_steps_overall - self.curr_step_overall) / self.n_steps_overall)
+        obj = stats["makespan_mean"] if hp.SCHED_OBJECTIVE == milp.Objective.CMAX else stats["flowtime_mean"]
         print(
             f"Ep{self.curr_step_overall:4d}/{self.n_steps_overall} (LR={lr:10.8f})  |  Rob/Stab={v:4.3f}  |  EndRew={reward:6.2f}  |  InterRew={interim_rewards:5.3f}  |  ActionStd={action_std:4.3f} ({actions})  |  {obj}"
         )
-
-        self._update_state(last=True, stats=stats, final_result=v)
 
         return reward
 

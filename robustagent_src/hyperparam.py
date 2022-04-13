@@ -3,7 +3,7 @@ import flowshop_milp as milp
 SCHED_OBJECTIVE = None #milp.Objective.CMAX # objective for the baseline schedule
 WEIGHT_ROBUSTNESS = None # weight of stability is 1-weight_robustness
 
-NO_MONTE_CARLO_EXPERIMENTS = 0 # no. of monte carlo simulations to evaluate the schedule regarding to its robustness and stability (888)
+N_MONTE_CARLO_EXPERIMENTS = 0 # no. of monte carlo simulations to evaluate the schedule regarding to its robustness and stability (888)
 
 N_SAMPLES = 10 # no of samples for training/testing (see pickle file in project dir)
 SAMPLES_TO_LOAD = 4 # 4 | 6 | 8 | 0=all jobs
@@ -13,3 +13,5 @@ TENSORBOARD_LOG_PATH = "./tensorboard_log/"
 
 CPU_CORES = 4
 PROCESS_SPAWNER = None
+
+SIM_TIMEOUT = 1
