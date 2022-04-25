@@ -14,7 +14,7 @@ def simulate_deterministic_bs_schedule(job_dict, start_times):
         fire_dynamic_events=False,
     )
     fs.env.run(until=fs.meta_proc)
-    return fs.kpis
+    return fs
 
 def get_initial_stochastic_infos(obj_value, job_dict, start_times):
     return sim.run_monte_carlo_experiments(
@@ -96,10 +96,10 @@ class RobustnessEvaluator:
         compare it with the baselien schedule."""
 
         if start_times != None:
-            bs = simulate_deterministic_bs_schedule(candidate_job_dict, start_times)
+            bs = simulate_deterministic_bs_schedule(candidate_job_dict, start_times).kpis
             res = sim.run_monte_carlo_experiments(bs[hp.SCHED_OBJECTIVE], hp.SCHED_OBJECTIVE, candidate_job_dict, start_times, n_experiments=hp.N_MONTE_CARLO_EXPERIMENTS)
         else:
-            bs = simulate_deterministic_bs_schedule(candidate_job_dict, self.initial_start_times)
+            bs = simulate_deterministic_bs_schedule(candidate_job_dict, self.initial_start_times).kpis
             #assert bs[hp.SCHED_OBJECTIVE] == self.initial_objective_value, 'must be true if all actions are [0]'
             res = sim.run_monte_carlo_experiments(
                 bs[hp.SCHED_OBJECTIVE], hp.SCHED_OBJECTIVE, candidate_job_dict, self.initial_start_times, n_experiments=hp.N_MONTE_CARLO_EXPERIMENTS
@@ -115,7 +115,7 @@ class BaselineSchedule:
         self.job_dict = milp.get_job_dict(jobs_raw)
         start_times, _ = milp.solve(hp.SCHED_OBJECTIVE, jobs_raw)
         self.task_order = list(map(lambda x: x[0], sorted(list(start_times.items()), key=lambda x: x[1])))
-        objective_value = simulate_deterministic_bs_schedule(self.job_dict, start_times)[hp.SCHED_OBJECTIVE]
+        objective_value = simulate_deterministic_bs_schedule(self.job_dict, start_times).kpis[hp.SCHED_OBJECTIVE]
         self.mc_stats = get_initial_stochastic_infos(objective_value, self.job_dict, start_times)
         self.evaluator = RobustnessEvaluator(jobs_raw, start_times, self.mc_stats, objective_value)
         #assert hp.N_JOBS != 0 and len(jobs_raw) == hp.N_JOBS, "NO JOBS is not set properly!"

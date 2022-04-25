@@ -236,27 +236,6 @@ def run_monte_carlo_experiments(
     ps.params['obj'] = objective
     monte_carlo_results = ps.await_processes()
 
-    # monte_carlo_results = []
-    # for i in range(n_experiments):
-    #     sim = FlowshopSimulation(jobs, start_times, fire_dynamic_events=True)
-    #     sim.env.run(until=sim.meta_proc)
-    #     com, stab_com_sum, dur, stab_dur_sum, slack = sim.get_stability_metrices()
-    #     monte_carlo_results.append(
-    #         {
-    #             "robustness": objective_value - sim.kpis[hp.SCHED_OBJECTIVE],
-    #             "stability_completion": stab_com_sum,
-    #             "stability_duration": stab_dur_sum,
-    #             "completions": com,
-    #             "durations": dur,
-    #             "free_slack": slack["free_slack"],
-    #             "total_slack": slack["total_slack"],
-    #             "makespan": sim.kpis[milp.Objective.CMAX],
-    #             "flowtime": sim.kpis[milp.Objective.F],
-    #             "machine_wait_time_ratio": sim.kpis['machine_waittime_ratio']
-    #         }
-    #     )
-    #     if i > 0 and i % 1000 == 0:
-    #         print(i)
     mean_job_duration = {}
     std_job_duration = {}
     mean_job_completion = {}

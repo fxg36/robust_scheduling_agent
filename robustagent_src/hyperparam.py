@@ -11,7 +11,7 @@ SAMPLES_TO_LOAD = 4 # 4 | 6 | 8 | 0=all jobs
 INCLUDE_DEMAND_RELATED_EVENTS = False # if false, only resource depended events are fire (DEPRECATED)
 TENSORBOARD_LOG_PATH = "./tensorboard_log/"
 
-CPU_CORES = 4
+CPU_CORES = 6
 PROCESS_SPAWNER = None
 
 SIM_TIMEOUT = 1

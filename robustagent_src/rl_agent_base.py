@@ -18,7 +18,7 @@ from pathlib import Path
 import torch as th
 from robustness_evaluator import simulate_deterministic_bs_schedule
 
-NO_OBSERVATION_FEATURES = 16
+NO_OBSERVATION_FEATURES = 13
 NO_ACTIONS = 3  # = factor to stretch processing times. chosen by the agent for each task
 NET_ARCH = dict(
     activation_fn=th.nn.ReLU, net_arch=[512, dict(vf=[128, 64], pi=[64])]
@@ -76,15 +76,24 @@ def linear_schedule(initial_value: float) -> Callable[[float], float]:
 
     return func
 
-
-def train(model, name, trainsteps, save=True):
-    name = f"{name}_{hp.SCHED_OBJECTIVE}_J{4}"
-    model.learn(total_timesteps=trainsteps, log_interval=1, tb_log_name=name)
-    print("#############################\ntraining completed")
-    if save:
+def get_model_name(algorithm_name: str, model_no=-1, with_model_path=False):
+    name = f"{algorithm_name}_{hp.SCHED_OBJECTIVE}"
+    name = f'{name}_n{model_no}' if model_no >= 0 else name
+    res = {}
+    res['model_name'] = name
+    if with_model_path:
         p = Path(".")
         p = p / "drl_models" / f"model_{name}"
-        model.save(p)
+        res['model_path'] = p
+    return res
+
+
+def train(model, algorithm_name, trainsteps, model_no, save=True):
+    model_info = get_model_name(algorithm_name, model_no, with_model_path=save)
+    model.learn(total_timesteps=trainsteps, log_interval=1, tb_log_name=model_info['model_name'])
+    print("#############################\ntraining completed")
+    if save:
+        model.save(model_info['model_path'])
 
 
 def test(env_norm, model, model_name, result_file_suffix, test_episodes=100):
@@ -137,8 +146,8 @@ class RobustFlowshopGymEnv(gym.Env):
         jobs_p1 = len(list(filter(lambda x: x == "p1", map(lambda x: x[5], self.curr_candidate.job_dict.values()))))
         self.last_plan_robustness = self.mc["r_mean"]
         self.state_dict = {
-            "robustness_rel": self.mc["r_mean"] * self.n_jobs,
-            "stability_rel": self.mc["scom_mean"] / self.n_jobs,
+            #"robustness_rel": self.mc["r_mean"] / self.n_jobs,
+            #"stability_rel": self.mc["scom_mean"] / self.n_jobs,
             #"makespan_rel": self.mc["makespan_mean"] / self.n_jobs,
             #"flowtime_rel": self.mc["flowtime_mean"] / self.n_jobs,
             # "totalslack_mean": self.mc["mean_total_slack"],
@@ -151,9 +160,13 @@ class RobustFlowshopGymEnv(gym.Env):
 
     def _update_state(self, last=False):
 
-        kpi = simulate_deterministic_bs_schedule(self.modified_jobs, self.curr_candidate.evaluator.initial_start_times)
-        self.state_dict["plan_robustness"] = (kpi[hp.SCHED_OBJECTIVE] - self.curr_candidate.evaluator.initial_objective_value) + self.mc["r_mean"]
+        fs = simulate_deterministic_bs_schedule(self.modified_jobs, self.curr_candidate.evaluator.initial_start_times)
+        self.state_dict["plan_robustness"] = (fs.kpis[hp.SCHED_OBJECTIVE] - self.curr_candidate.evaluator.initial_objective_value) + self.mc["r_mean"]
         #diff = (kpi[hp.SCHED_OBJECTIVE] - self.curr_candidate.evaluator.initial_objective_value)
+
+        # obj = self.mc["makespan_mean"] if hp.SCHED_OBJECTIVE == milp.Objective.CMAX else self.mc['flowtime_mean']
+        # self.state_dict["objective_diff"] = fs.kpis[hp.SCHED_OBJECTIVE] - obj
+
 
         job_task = self.curr_candidate.task_order[self.curr_episode_step if not last else self.curr_episode_step-1]
         job = job_task[0]
@@ -161,21 +174,29 @@ class RobustFlowshopGymEnv(gym.Env):
         
 
         self.state_dict["added_slack_job"] = (
-            sum(map(lambda y: y["slack"], filter(lambda x: x["job"] == job, self.job_slack_log))) / self.n_jobs
+            sum(map(lambda y: y["slack"], filter(lambda x: x["job"] == job, self.job_slack_log)))
         )
         self.state_dict["added_slack_machine_rel"] = (
             sum(map(lambda y: y["slack"], filter(lambda x: x["task"] == machine, self.machine_slack_log))) / self.n_jobs
         )
-        self.state_dict["added_slack_other_rel"] = (
-            sum(map(lambda y: y["slack"], self.machine_slack_log)) / self.n_jobs
-        ) - self.state_dict["added_slack_machine_rel"]
+        # self.state_dict["added_slack_other_rel"] = (
+        #     sum(map(lambda y: y["slack"], self.machine_slack_log))
+        # ) - self.state_dict["added_slack_machine_rel"]
 
+        # successors = self.curr_candidate.task_order[self.curr_episode_step + 1 :]
+        # successors_same_machine = list(filter(lambda x: x[1] == machine, successors))
+        # self.state_dict["n_successors_machine"] = len(successors_same_machine) / self.n_jobs
+        
+
+        
         #job_dict_entry = self.curr_candidate.job_dict[job]
         # due_date = job_dict_entry[3]
         # max_due_date = max(map(lambda x: x[3], self.curr_candidate.job_dict.values()))
         # self.state_dict["due_date_rel"] = due_date / max_due_date
-
-        self.state_dict["job_end_mean_rel"] = self.mc['com_mean_job'][(job,3)] / self.mc["makespan_mean"]
+        #self.state_dict["job_end_plan_rel"] = fs.get_stability_metrices()[0][job,3] / self.mc["makespan_mean"]
+        #self.state_dict["job_end_mean_rel"] = self.mc['com_mean_job'][job,3] / self.mc["makespan_mean"]
+        self.state_dict["job_end_diff"] = fs.get_stability_metrices()[0][job,3] - self.mc['com_mean_job'][job,3]
+        self.state_dict["operation_end_diff"] = fs.get_stability_metrices()[0][job,machine] - self.mc['com_mean_job'][job,machine]
 
         machine_dummies = pd.get_dummies(pd.Series([1, 2, 3])).values
         machine_dummy = machine_dummies[machine - 1]
@@ -189,11 +210,8 @@ class RobustFlowshopGymEnv(gym.Env):
         # self.state_dict["operation_freeslack_above_avg"] = (
         #     1 if self.mc["free_slack_mean_job"][job_task] > self.mc["mean_free_slack"] else 0
         # )
-        self.state_dict["critical_path"] = self.mc["total_slack_mean_job"][job_task] == 0
+        self.state_dict["critical_path"] = 1 if self.mc["total_slack_mean_job"][job_task] == 0 else 0
 
-        successors = self.curr_candidate.task_order[self.curr_episode_step + 1 :]
-        successors_same_machine = list(filter(lambda x: x[1] == machine, successors))
-        self.state_dict["n_successors_machine"] = len(successors_same_machine) / self.n_jobs
 
         step_rel = (self.curr_episode_step) / self.n_tasks
         self.state_dict["step_progress"] = step_rel

@@ -1,13 +1,13 @@
 import numpy as np
 from numpy.random import rand, triangular
 import matplotlib.pyplot as plt
-
+import time
 
 A = (2,10,25)
 B = (2,6,15)
 P = 0.4
 
-
+start = time.time()
 
 
 
@@ -43,7 +43,7 @@ print(a3)
 # print(diff)
 
 V = []
-for _ in range(1000000):
+for _ in range(2):
     v = get_triang_rnd(A)
     if rand() <= P:
         v += get_triang_rnd(B)
@@ -53,10 +53,13 @@ print(f"{min(V)}/{C[0]}")
 print(f"{np.mean(V)}/{C[1]}")
 print(f"{max(V)}/{C[2]}")
 
-plt.hist(V, bins='auto')  # density=False would make counts
-plt.ylabel('Probability')
-plt.xlabel('Data');
-plt.show()
+end = time.time() - start
+print(end)
+
+# plt.hist(V, bins='auto')  # density=False would make counts
+# plt.ylabel('Probability')
+# plt.xlabel('Data');
+# plt.show()
 
 
 

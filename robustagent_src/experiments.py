@@ -13,7 +13,7 @@ def sars1_ms():
     sa.sa_method(sa_type, do_print=True)
 
 def train_drl():
-    hp.SAMPLES_TO_LOAD = 6
+    hp.SAMPLES_TO_LOAD = 0
     hp.SCHED_OBJECTIVE = milp.Objective.CMAX
     hp.WEIGHT_ROBUSTNESS = 0.2
     hp.N_MONTE_CARLO_EXPERIMENTS = 600
@@ -21,17 +21,17 @@ def train_drl():
     #a2c.train(lr_start=0.001, gamma=0.99, training_steps=9000, steps_per_update=18)
 
     hp.SCHED_OBJECTIVE = milp.Objective.F
-    hp.N_MONTE_CARLO_EXPERIMENTS = 600
+    hp.N_MONTE_CARLO_EXPERIMENTS = 400
     hp.WEIGHT_ROBUSTNESS = 0.5
-    ppo.train(lr_start=0.0001, gamma=0.99, training_steps=9000, steps_per_update=18)
+    ppo.train(lr_start=0.0001, gamma=0.99, training_steps=10000, steps_per_update=10)
     #a2c.train(lr_start=0.001, gamma=0.99, training_steps=9000, steps_per_update=18) 
 
 def test_drl():
-    hp.SAMPLES_TO_LOAD = 8
+    hp.SAMPLES_TO_LOAD = 0
     hp.SCHED_OBJECTIVE = milp.Objective.F
     hp.WEIGHT_ROBUSTNESS = 0.5
     hp.N_MONTE_CARLO_EXPERIMENTS = 600
-    ppo.test(test_episodes=50, result_suffix='4', sample_ids=None)
+    ppo.test(test_episodes=50, result_suffix=str(hp.SAMPLES_TO_LOAD), sample_ids=None)
 
 
 def enable_multiproc():
