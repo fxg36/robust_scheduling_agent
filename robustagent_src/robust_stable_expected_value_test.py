@@ -8,7 +8,7 @@ import flowshhop_simulation as sim
 import pandas as pd
 
 def append_res(s_id, obj, jobs_raw_clone):
-    JobFactory.preprocess_jobs2(jobs_raw_clone, with_downtime=False, half_downtime=True, with_std=False)
+    JobFactory.preprocess_jobs(jobs_raw_clone)
     jobs_dict = get_job_dict(jobs_raw_clone)
     fit, res = sample.evaluator.eval(jobs_dict)
     w = hp.WEIGHT_ROBUSTNESS

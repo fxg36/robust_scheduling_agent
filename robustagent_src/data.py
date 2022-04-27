@@ -120,7 +120,7 @@ class JobFactory:
             def std(tuple):
                 return ((tuple[0] - tuple[2]) ** 2 + (tuple[2] - tuple[1]) ** 2 + (tuple[0] - tuple[1]) ** 2) ** 0.5 / 6
 
-            return e(a) - p * e(b), \
+            return e(a) - std(a), \
                 e(a), \
                 e(a) + p * e(b), \
                 e(a) + p * e(b) + std(a)/4 + p * std(b)/4, \

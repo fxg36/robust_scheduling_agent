@@ -248,10 +248,11 @@ class RobustFlowshopGymEnv(gym.Env):
         if action == 0:
             new_duration = default
 
-        # use exptected value without downtime (optimistic)
+        # use exptected value - stdev (optimistic)
         if action == 1:
             new_duration = very_optimistic
-        # consider stdev (conservative)
+        
+        # consider downtime and stdev (conservative)
         elif action == 2:
             new_duration = very_conservative
 
