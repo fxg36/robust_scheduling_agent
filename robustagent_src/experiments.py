@@ -5,13 +5,27 @@ import rl_agent_ppo as ppo
 import flowshop_milp as milp
 import flowshhop_simulation as sim
 import simulated_annealing as sa
+import time
+from robustness_evaluator import Result
+import numpy as np
 
-
-def sars1_ms():
+def sars1():
+    hp.WEIGHT_ROBUSTNESS = 0.5
+    hp.N_MONTE_CARLO_EXPERIMENTS = 50
     hp.SCHED_OBJECTIVE = milp.Objective.F
-    hp.WEIGHT_ROBUSTNESS = 0.85
     sa_type = 0  # 0 = add slack times, 1 = create neighbour
-    sa.sa_method(sa_type, do_print=True)
+    hp.SAMPLES_TO_LOAD = 4
+    Result.results = []
+
+    times = []
+    for i in range(1):
+        start = time.time()
+        sa.sa_method(sa_type, sample_id=i, do_print=False)
+        duration = time.time() - start
+        times.append(duration)
+    Result.write_results("SARS1", hp.SAMPLES_TO_LOAD)
+    print(f"4:{np.mean(times)}")
+
 
 
 def train_drl():
@@ -29,19 +43,14 @@ def train_drl():
     hp.SCHED_OBJECTIVE = milp.Objective.CMAX
     hp.WEIGHT_ROBUSTNESS = 0.5
     hp.N_MONTE_CARLO_EXPERIMENTS = 400
-    # ppo.train(lr_start=0.0001, gamma=0.99, training_steps=9000, steps_per_update=18)
-    # a2c.train(lr_start=0.001, gamma=0.99, training_steps=9000, steps_per_update=18)
-    #train_loop(5, ppo.train, lr_start=0.0001, gamma=0.99, training_steps=10000, steps_per_update=18)
-    #train_loop(5, a2c.train, lr_start=0.001, gamma=0.99, training_steps=10000, steps_per_update=18)
-
+    train_loop(5, ppo.train, lr_start=0.0001, gamma=0.99, training_steps=10000, steps_per_update=18)
+    train_loop(5, a2c.train, lr_start=0.001, gamma=0.99, training_steps=10000, steps_per_update=18)
 
     hp.SCHED_OBJECTIVE = milp.Objective.F
     hp.N_MONTE_CARLO_EXPERIMENTS = 400
     hp.WEIGHT_ROBUSTNESS = 0.5
-    # train_loop(5, ppo.train, lr_start=0.0001, gamma=0.99, training_steps=10000, steps_per_update=18)
-    # train_loop(5, a2c.train, lr_start=0.001, gamma=0.99, training_steps=10000, steps_per_update=18)
-    # ppo.train(lr_start=0.0001, gamma=0.99, training_steps=10000, steps_per_update=10)
-    # a2c.train(lr_start=0.001, gamma=0.99, training_steps=9000, steps_per_update=18)
+    train_loop(5, ppo.train, lr_start=0.0001, gamma=0.99, training_steps=10000, steps_per_update=18)
+    train_loop(5, a2c.train, lr_start=0.001, gamma=0.99, training_steps=10000, steps_per_update=18)
 
 
 def test_drl():
@@ -87,6 +96,6 @@ def enable_multiproc():
 if __name__ == "__main__":
     enable_multiproc()
     #train_drl()
-    test_drl()
-    # sars1_ms()
+    #test_drl()
+    sars1()
     ProcessSpawner.instances["montecarlo"].kill_processes()

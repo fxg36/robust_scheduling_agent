@@ -23,28 +23,18 @@ def get_initial_stochastic_infos(obj_value, job_dict, start_times):
 
 class Result:
     results = []
-    def __init__(self, rsv, s, r, s_base, r_base):
+    def __init__(self, rsv, s, r, s_base, r_base, time=None):
         self.rsv = rsv
         self.s = s
         self.r = r
         self.s_base = s_base
         self.r_base = r_base
+        self.time = time
     
 
     @staticmethod
     def write_results(filename, suffix, reset=True):
-        p = Path(".")
-        p = p / "experiment_results" / f"{filename}_{suffix}.csv"
-
-        # for v in Result.results:
-        #     print(v)
-        # print(f"min: {min(V)}")
-        # print(f"mean: {np.mean(V)}")
-        # print(f"std: {np.std(V)}")
-
-        #data = list(map(lambda x: [x.rsv, x.r, x.s, x.r_base, x.s_base], Result.results))
-
-        df = pd.DataFrame({
+        data = {
             'rsv':list(map(lambda x: x.rsv, Result.results)),
             'r':list(map(lambda x: x.r, Result.results)),
             'r_base':list(map(lambda x: x.r_base, Result.results)),
@@ -52,10 +42,22 @@ class Result:
             's':list(map(lambda x: x.s, Result.results)),
             's_base':list(map(lambda x: x.s_base, Result.results)),
             's_diff': list(map(lambda x: x.s_base-x.s, Result.results)),
-        })
-        df = df[['rsv', 'r', 'r_base', 'r_diff', 's', 's_base', 's_diff']] 
-        df.to_csv(p, sep=';', encoding='utf-8', header=True, index=False, decimal=",")
+        }
+        cols = ['rsv', 'r', 'r_base', 'r_diff', 's', 's_base', 's_diff']
+        if Result.results[0].time != None:
+            data['time'] = list(map(lambda x: x.time, Result.results))
+            cols.append('time')
+
+        df = pd.DataFrame(data)
+        df = df[cols] 
+        
+        main_path = Path(".") / "experiment_results" / f"{filename}_{suffix}.csv"
+        df.to_csv(main_path, sep=';', encoding='utf-8', header=True, index=False, decimal=",")
+        
         descr = df.describe()
+        stats_path = Path(".") / "experiment_results" / f"{filename}_{suffix}_stats.csv"
+        descr.to_csv(stats_path, sep=';', encoding='utf-8', header=True, index=True, decimal=",")
+        
         print(df)
         print(descr)
 
@@ -75,7 +77,7 @@ class RobustnessEvaluator:
         self.initial_objective_value = objective_value_initial
 
     @staticmethod
-    def calc_fittness(r, s, r_base, s_base):
+    def calc_fittness(r, s, r_base, s_base, log_result=True):
         wr = hp.WEIGHT_ROBUSTNESS
         assert (
             hp.WEIGHT_ROBUSTNESS >= 0 and hp.WEIGHT_ROBUSTNESS <= 1
@@ -83,15 +85,12 @@ class RobustnessEvaluator:
 
         ws = 1 - wr
         fit = (abs(r) * wr + s * ws) / (abs(r_base) * wr + s_base * ws)
-        #fit = abs(r) / abs(r_base) * wr + s / s_base * ws
-        Result.results.append(Result(rsv=fit, s=s, r=r, s_base=s_base, r_base=r_base))
-        return fit
-        # robustness_rel = (abs(r)) / (abs(r_base)) * hp.WEIGHT_ROBUSTNESS
-        # stability_rel = (s) / (s_base) * (1 - hp.WEIGHT_ROBUSTNESS)
-        # eval_value = robustness_rel + stability_rel
-        # return eval_value
 
-    def eval(self, candidate_job_dict, start_times=None):
+        if log_result:
+            Result.results.append(Result(rsv=fit, s=s, r=r, s_base=s_base, r_base=r_base))
+        return fit
+
+    def eval(self, candidate_job_dict, start_times=None, log_result=True):
         """evaluate the manipulated job durations (see job_dict) regarding to its robustness and stability.
         compare it with the baselien schedule."""
 
@@ -100,11 +99,10 @@ class RobustnessEvaluator:
             res = sim.run_monte_carlo_experiments(bs[hp.SCHED_OBJECTIVE], hp.SCHED_OBJECTIVE, candidate_job_dict, start_times, n_experiments=hp.N_MONTE_CARLO_EXPERIMENTS)
         else:
             bs = simulate_deterministic_bs_schedule(candidate_job_dict, self.initial_start_times).kpis
-            #assert bs[hp.SCHED_OBJECTIVE] == self.initial_objective_value, 'must be true if all actions are [0]'
             res = sim.run_monte_carlo_experiments(
                 bs[hp.SCHED_OBJECTIVE], hp.SCHED_OBJECTIVE, candidate_job_dict, self.initial_start_times, n_experiments=hp.N_MONTE_CARLO_EXPERIMENTS
             )
-        fit = RobustnessEvaluator.calc_fittness(res["r_mean"], res["scom_mean"], self.initial_robustness, self.initial_stability)
+        fit = RobustnessEvaluator.calc_fittness(res["r_mean"], res["scom_mean"], self.initial_robustness, self.initial_stability, log_result=log_result)
         return fit, res
 
 
@@ -118,4 +116,3 @@ class BaselineSchedule:
         objective_value = simulate_deterministic_bs_schedule(self.job_dict, start_times).kpis[hp.SCHED_OBJECTIVE]
         self.mc_stats = get_initial_stochastic_infos(objective_value, self.job_dict, start_times)
         self.evaluator = RobustnessEvaluator(jobs_raw, start_times, self.mc_stats, objective_value)
-        #assert hp.N_JOBS != 0 and len(jobs_raw) == hp.N_JOBS, "NO JOBS is not set properly!"

@@ -3,8 +3,12 @@ from random import choice, random, randint, sample
 import flowshop_milp as milp
 from math import exp
 import hyperparam as hp
+from process_spawner import ProcessSpawner
 import rl_agent_base as base
 from robustness_evaluator import RobustnessEvaluator
+from data import JobFactory as jf
+import flowshhop_simulation as sim
+from robustness_evaluator import Result
 
 NO_ITERATIONS = 50
 NO_MAX_ATTEMPTS = 5
@@ -12,15 +16,19 @@ NO_MAX_ATTEMPTS = 5
 
 def create_neighbor(curr_solution, temp, sa_type):
     n = deepcopy(curr_solution)
-    if sa_type == 0:
+    if sa_type == 0:  # stretching/compressing operations
         jobs = list(n[0].values())
-        t = choice(list(filter(lambda x: isinstance(x, list), choice(jobs))))
-        t[1] *= 1 + max(0.015, 0.06 * temp)
-        if randint(0, 1) > 0:
-            t[1] *= 1 + max(0.02, 0.1 * temp)
-        else:
-            t[1] *= 1 - max(0.02, 0.1 * temp)
-    elif sa_type == 1:
+        rnd_job = choice(jobs)
+        job_no = jobs.index(rnd_job) + 1
+        t = choice(list(filter(lambda x: isinstance(x, list), rnd_job)))
+        processing_time_candidates = jf.preprocess_one_operation(jobs_raw=jobs, job_id=job_no, machine_id=t[0])
+        time_default = processing_time_candidates[1]
+        time_optimistic = processing_time_candidates[0]
+        time_conservative = processing_time_candidates[4]
+        times = [time_default, time_optimistic, time_conservative]
+        t[1] = choice(times)
+
+    elif sa_type == 1:  # neighbor generation
         machine = randint(1, 3)
         swap = sample(list(filter(lambda x: x[1] == machine, list(n[1].keys()))), 2)
         temp = n[1][swap[0]]
@@ -33,11 +41,13 @@ def create_neighbor(curr_solution, temp, sa_type):
 
 def sa_method(
     sa_type,
+    sample_id=0,
     do_print=False,
 ):
-    samples = base.load_samples()
+    samples = base.load_samples(hp.SAMPLES_TO_LOAD, sample_ids=None)
+
     bs: base.BaselineSchedule
-    bs = samples[3]
+    bs = samples[sample_id]
     ev = bs.evaluator
     best = (ev.job_dict, ev.initial_start_times)
     best_eval = (
@@ -45,7 +55,8 @@ def sa_method(
             ev.initial_stats["r_mean"],
             ev.initial_stats["scom_mean"],
             ev.initial_stats["r_mean"],
-            ev.initial_stats["scom_mean"]
+            ev.initial_stats["scom_mean"],
+            log_result=False,
         ),
         ev.initial_stats,
     )
@@ -59,21 +70,25 @@ def sa_method(
 
     for i in range(NO_ITERATIONS):
         t = (NO_ITERATIONS - i) / NO_ITERATIONS
-        # candidate = create_neighbor(curr, curr_eval[1]["r_mean"], t)
         candidate = create_neighbor(curr, t, sa_type)
         if sa_type == 1:
-            candidate_eval = ev.eval(candidate[0], candidate[1], neighbor_robustness=0, neighbor_stability=0)
+            candidate_eval = ev.eval(
+                candidate[0], candidate[1], neighbor_robustness=0, neighbor_stability=0, log_result=False
+            )
         else:
-            candidate_eval = ev.eval(candidate[0], candidate[1])
+            candidate_eval = ev.eval(candidate[0], candidate[1], log_result=False)
 
         print(f"Iteration:{i}: {candidate_eval[0]}")
         if candidate_eval[0] < best_eval[0]:
             if do_print:
-                obj = candidate_eval[1]['makespan_mean'] if hp.SCHED_OBJECTIVE == milp.Objective.CMAX else candidate_eval[1]['flowtime_mean']
+                obj = (
+                    candidate_eval[1]["makespan_mean"]
+                    if hp.SCHED_OBJECTIVE == milp.Objective.CMAX
+                    else candidate_eval[1]["flowtime_mean"]
+                )
                 print(
                     f"\tImproved from {best_eval[0]:.3f} -> {candidate_eval[0]:.3f}. R={candidate_eval[1]['r_mean']}, S={candidate_eval[1]['scom_mean']} (SDur={best_eval[1]['sdur_mean']} | {obj})"
                 )
-
             best, best_eval = candidate, candidate_eval
             improvements_missed = 0
         else:
@@ -87,9 +102,30 @@ def sa_method(
         elif diff < 0 or random() < exp(-diff / t):
             curr, curr_eval = candidate, candidate_eval
 
+    Result.results.append(
+        Result(
+            rsv=best_eval[0],
+            r=best_eval[1]["r_mean"],
+            s=best_eval[1]["scom_mean"],
+            r_base=ev.initial_stats["r_mean"],
+            s_base=ev.initial_stats["scom_mean"],
+        )
+    )
+
     return best, best_eval
 
 
 if __name__ == "__main__":
-    sa_type = 1 # 0 = add slack times, 1 = create neighbour
+    print("INIT PROCESS SPAWNER FOR PARALLEL COMPUTING")
+    # freeze_support()
+    ps = ProcessSpawner(func_target=sim.experiment_process, parallel_processes=hp.CPU_CORES)
+    ProcessSpawner.instances["montecarlo"] = ps
+    print("INIT PROCESS SPAWNER FOR PARALLEL COMPUTING COMPLETED")
+
+    hp.WEIGHT_ROBUSTNESS = 0.5
+    hp.SAMPLES_TO_LOAD = 4
+    hp.SCHED_OBJECTIVE = milp.Objective.CMAX
+    hp.N_MONTE_CARLO_EXPERIMENTS = 4000
+
+    sa_type = 0  # 0 = add slack times, 1 = create neighbour
     sa_method(sa_type, do_print=True)
