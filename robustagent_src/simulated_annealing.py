@@ -9,6 +9,7 @@ from robustness_evaluator import RobustnessEvaluator
 from data import JobFactory as jf
 import flowshhop_simulation as sim
 from robustness_evaluator import Result
+import time
 
 NO_ITERATIONS = 50
 NO_MAX_ATTEMPTS = 5
@@ -22,9 +23,9 @@ def create_neighbor(curr_solution, temp, sa_type):
         job_no = jobs.index(rnd_job) + 1
         t = choice(list(filter(lambda x: isinstance(x, list), rnd_job)))
         processing_time_candidates = jf.preprocess_one_operation(jobs_raw=jobs, job_id=job_no, machine_id=t[0])
-        time_default = processing_time_candidates[1]
-        time_optimistic = processing_time_candidates[0]
-        time_conservative = processing_time_candidates[4]
+        time_default = processing_time_candidates[2]
+        time_optimistic = processing_time_candidates[1]
+        time_conservative = processing_time_candidates[3]
         times = [time_default, time_optimistic, time_conservative]
         t[1] = choice(times)
 
@@ -44,7 +45,8 @@ def sa_method(
     sample_id=0,
     do_print=False,
 ):
-    samples = base.load_samples(hp.SAMPLES_TO_LOAD, sample_ids=None)
+    start = time.time()
+    samples = base.load_samples(hp.SAMPLES_TO_LOAD)
 
     bs: base.BaselineSchedule
     bs = samples[sample_id]
@@ -62,6 +64,7 @@ def sa_method(
     )
     curr, curr_eval = best, best_eval
     improvements_missed = 0
+    initial_objective_value = bs.evaluator.initial_objective_value
 
     if do_print:
         print(
@@ -71,14 +74,16 @@ def sa_method(
     for i in range(NO_ITERATIONS):
         t = (NO_ITERATIONS - i) / NO_ITERATIONS
         candidate = create_neighbor(curr, t, sa_type)
-        if sa_type == 1:
+        if sa_type == 1: # 0 = add slack times, 1 = create neighbour
             candidate_eval = ev.eval(
-                candidate[0], candidate[1], neighbor_robustness=0, neighbor_stability=0, log_result=False
+                candidate[0], start_times_override=candidate[1], log_result=False
             )
         else:
-            candidate_eval = ev.eval(candidate[0], candidate[1], log_result=False)
-
-        print(f"Iteration:{i}: {candidate_eval[0]}")
+            candidate_eval = ev.eval(candidate[0], log_result=False)
+        
+        if do_print:
+            print(f"Iteration:{i}: {candidate_eval[0]}")
+        
         if candidate_eval[0] < best_eval[0]:
             if do_print:
                 obj = (
@@ -101,7 +106,7 @@ def sa_method(
             improvements_missed = 0
         elif diff < 0 or random() < exp(-diff / t):
             curr, curr_eval = candidate, candidate_eval
-
+    
     Result.results.append(
         Result(
             rsv=best_eval[0],
@@ -109,6 +114,8 @@ def sa_method(
             s=best_eval[1]["scom_mean"],
             r_base=ev.initial_stats["r_mean"],
             s_base=ev.initial_stats["scom_mean"],
+            time=time.time() - start,
+            objective_diff = best_eval[2] / initial_objective_value if sa_type == 1 else None
         )
     )
 

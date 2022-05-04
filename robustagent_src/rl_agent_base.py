@@ -9,7 +9,7 @@ from gym.spaces import Box, Discrete
 import numpy as np
 import pandas as pd
 import hyperparam as hp
-from robustness_evaluator import BaselineSchedule, Result, RobustnessEvaluator
+from robustness_evaluator import BaselineSchedule, Result
 import data as d
 import flowshop_milp as milp
 from stable_baselines3.common.vec_env import VecNormalize, DummyVecEnv
@@ -18,14 +18,14 @@ from pathlib import Path
 import torch as th
 from robustness_evaluator import simulate_deterministic_bs_schedule
 
-NO_OBSERVATION_FEATURES = 13
+NO_OBSERVATION_FEATURES = 14
 NO_ACTIONS = 3  # = factor to stretch processing times. chosen by the agent for each task
 NET_ARCH = dict(
     activation_fn=th.nn.ReLU, net_arch=[512, dict(vf=[128, 64], pi=[64])]
 )  # just hidden layers. input and output layer are set automatically by stable baselines.
 
 
-def generate_samples(n_jobs):
+def generate_samples(n_jobs,use_train_samples):
     samples = []
     for _ in range(hp.N_SAMPLES):
         no_jobs_p1 = randint(1, n_jobs - 1)
@@ -35,35 +35,38 @@ def generate_samples(n_jobs):
         print("CREATED 1 SCHEDULE")
 
     p = Path(".")
-    p = p / "samples" / f"samples{hp.N_SAMPLES}_jobs{n_jobs}_{hp.SCHED_OBJECTIVE}.pickle"
+    if use_train_samples:
+        p = p / "samples" / "train" / f"samples{hp.N_SAMPLES}_jobs{n_jobs}_{hp.SCHED_OBJECTIVE}.pickle"
+    else:
+        p = p / "samples" / "test" / f"samples{hp.N_SAMPLES}_jobs{n_jobs}_{hp.SCHED_OBJECTIVE}.pickle"
+        
     with open(p, "wb") as f:
         pickle.dump(samples, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-def load_samples(n: int, sample_ids: List[int]) -> List[BaselineSchedule]:
+def load_samples(n: int, use_train_samples=False) -> List[BaselineSchedule]:
     if n == 0:
         samples = []
-        samples.extend(load_samples(4, None))
-        samples.extend(load_samples(6, None))
-        samples.extend(load_samples(8, None))
+        samples.extend(load_samples(5, use_train_samples))
+        samples.extend(load_samples(10, use_train_samples))
         return samples
     else:
         p = Path(".")
-        p = p / "samples" / f"samples{hp.N_SAMPLES}_jobs{n}_{hp.SCHED_OBJECTIVE}.pickle"
+        if use_train_samples:
+            p = p / "samples" / "train" / f"samples{hp.N_SAMPLES}_jobs{n}_{hp.SCHED_OBJECTIVE}.pickle"
+        else:
+            p = p / "samples" / "test" / f"samples{hp.N_SAMPLES}_jobs{n}_{hp.SCHED_OBJECTIVE}.pickle"
         try:
             with open(p, "rb") as f:
                 samples = pickle.load(f)
-            if sample_ids == None:
-                return samples
-            else:
-                return list(filter(lambda x: samples.index(x) in sample_ids, samples))
+            return samples
         except:
-            generate_samples(n)
+            generate_samples(n,use_train_samples)
             return load_samples(n)
 
 
-def get_env(n_steps, learning_rate_start=0, sample_ids=None):
-    samples = load_samples(hp.SAMPLES_TO_LOAD, sample_ids)
+def get_env(n_steps, learning_rate_start=0, use_train_samples=False):
+    samples = load_samples(hp.SAMPLES_TO_LOAD, use_train_samples)
     env = RobustFlowshopGymEnv(samples, n_steps, learning_rate_start)
     env = Monitor(env, hp.TENSORBOARD_LOG_PATH, allow_early_resets=True)
     venv = DummyVecEnv([lambda: env])
@@ -128,7 +131,6 @@ class RobustFlowshopGymEnv(gym.Env):
         self.curr_step_overall = 0
         self.n_steps_overall = n_steps
         self.initial_learning_rate = initial_learning_rate
-        # self.results = []
         self._set_initial_state()
 
     def _set_initial_state(self):
@@ -179,22 +181,11 @@ class RobustFlowshopGymEnv(gym.Env):
         self.state_dict["added_slack_machine_rel"] = (
             sum(map(lambda y: y["slack"], filter(lambda x: x["task"] == machine, self.machine_slack_log))) / self.n_jobs
         )
-        # self.state_dict["added_slack_other_rel"] = (
-        #     sum(map(lambda y: y["slack"], self.machine_slack_log))
-        # ) - self.state_dict["added_slack_machine_rel"]
 
-        # successors = self.curr_candidate.task_order[self.curr_episode_step + 1 :]
-        # successors_same_machine = list(filter(lambda x: x[1] == machine, successors))
-        # self.state_dict["n_successors_machine"] = len(successors_same_machine) / self.n_jobs
+        successors = self.curr_candidate.task_order[self.curr_episode_step + 1 :]
+        successors_same_machine = list(filter(lambda x: x[1] == machine, successors))
+        self.state_dict["n_successors_machine"] = len(successors_same_machine) / self.n_jobs
         
-
-        
-        #job_dict_entry = self.curr_candidate.job_dict[job]
-        # due_date = job_dict_entry[3]
-        # max_due_date = max(map(lambda x: x[3], self.curr_candidate.job_dict.values()))
-        # self.state_dict["due_date_rel"] = due_date / max_due_date
-        #self.state_dict["job_end_plan_rel"] = fs.get_stability_metrices()[0][job,3] / self.mc["makespan_mean"]
-        #self.state_dict["job_end_mean_rel"] = self.mc['com_mean_job'][job,3] / self.mc["makespan_mean"]
         self.state_dict["job_end_diff"] = fs.get_stability_metrices()[0][job,3] - self.mc['com_mean_job'][job,3]
         self.state_dict["operation_end_diff"] = fs.get_stability_metrices()[0][job,machine] - self.mc['com_mean_job'][job,machine]
 
@@ -207,20 +198,11 @@ class RobustFlowshopGymEnv(gym.Env):
         self.state_dict["operation_totalslack_above_avg"] = (
             1 if self.mc["total_slack_mean_job"][job_task] > self.mc["mean_total_slack"] else 0
         )
-        # self.state_dict["operation_freeslack_above_avg"] = (
-        #     1 if self.mc["free_slack_mean_job"][job_task] > self.mc["mean_free_slack"] else 0
-        # )
         self.state_dict["critical_path"] = 1 if self.mc["total_slack_mean_job"][job_task] == 0 else 0
-
 
         step_rel = (self.curr_episode_step) / self.n_tasks
         self.state_dict["step_progress"] = step_rel
 
-        # self.state_dict["wait_time_ratio_machine"] = self.mc["machine_wait_time_ratio_mean"][machine]
-        # self.state_dict["first_quarter_of_schedule"] = 1 if step_rel <= 1 / 4 else 0
-        # self.state_dict["second_quarter_of_schedule"] = 1 if step_rel > 1 / 4 and step_rel <= 2 / 4 else 0
-        # self.state_dict["third_quarter_of_schedule"] = 1 if step_rel > 2 / 4 and step_rel <= 3 / 4 else 0
-        # self.state_dict["last_operation_slack_added"] = 0 if len(self.slack_log) < 2 or self.slack_log[-2] == 0 else 1
 
         self.state = list(self.state_dict.values())
         assert len(self.state) == NO_OBSERVATION_FEATURES, str(
@@ -237,9 +219,9 @@ class RobustFlowshopGymEnv(gym.Env):
         new_duration = 0
 
         values = d.JobFactory.preprocess_one_operation(self.curr_candidate.jobs_raw, job_task[0], job_task[1])
-        default = values[1]
-        very_optimistic = values[0]
-        very_conservative = values[4]
+        default = values[2]
+        very_optimistic = values[1]
+        very_conservative = values[3]
 
         wr = hp.WEIGHT_ROBUSTNESS
         ws = 1-wr
@@ -269,8 +251,9 @@ class RobustFlowshopGymEnv(gym.Env):
 
         # stretch or extend task
         task_to_modify[1] = new_duration
-        self.job_slack_log.append({"job": job, "slack": new_duration - old_duration})
-        self.machine_slack_log.append({"task": task, "slack": new_duration - old_duration})
+        dur_diff = new_duration - old_duration
+        self.job_slack_log.append({"job": job, "slack": -1 if dur_diff < 0 else 1 if dur_diff > 0 else 0})
+        self.machine_slack_log.append({"task": task, "slack": -1 if dur_diff < 0 else 1 if dur_diff > 0 else 0})
         
         self.curr_episode_step += 1
         self.curr_step_overall += 1
@@ -317,7 +300,7 @@ class RobustFlowshopGymEnv(gym.Env):
         return ir
 
     def handle_episode_end(self, reward):
-        v, stats = self.curr_candidate.evaluator.eval(self.modified_jobs)
+        v, stats, _ = self.curr_candidate.evaluator.eval(self.modified_jobs)
 
         reward += v ** 10 * -100 if v < 1 else v * -125
 

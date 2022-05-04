@@ -1,6 +1,4 @@
 import random
-import hyperparam as hp
-
 
 class Product1:
     M1Duration = (149, 150, 155)  # triangular distributed uncertain processing time
@@ -137,11 +135,11 @@ class JobFactory:
         return values
 
     @staticmethod
-    def preprocess_jobs(jobs_raw, do_round=True):
+    def preprocess_jobs(jobs_raw, do_round=True, expected_value_idx = 2):
         """ use expected values for the operation durations. include uncertain processing times and machine failure probabilities. """
 
         for job in jobs_raw:
             job_id = jobs_raw.index(job) + 1
             for task in filter(lambda x: isinstance(x, list), job):
                 val = JobFactory.preprocess_one_operation(jobs_raw, job_id=job_id, machine_id=task[0], do_round=do_round)
-                task[1] = val[2]
+                task[1] = val[expected_value_idx]
