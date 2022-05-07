@@ -210,8 +210,8 @@ def experiment_process(pid, param, output):
                 "machine_wait_time_ratio": sim.kpis['machine_waittime_ratio']
             }
         )
-        if pid == 1 and i > 0 and i % 1000 == 0:
-            print(i)
+        # if pid == 1 and i > 0 and i % 1000 == 0:
+        #     print(i)
     return res
 
 def run_monte_carlo_experiments(

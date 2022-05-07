@@ -148,26 +148,13 @@ class RobustFlowshopGymEnv(gym.Env):
         jobs_p1 = len(list(filter(lambda x: x == "p1", map(lambda x: x[5], self.curr_candidate.job_dict.values()))))
         self.last_plan_robustness = self.mc["r_mean"]
         self.state_dict = {
-            #"robustness_rel": self.mc["r_mean"] / self.n_jobs,
-            #"stability_rel": self.mc["scom_mean"] / self.n_jobs,
-            #"makespan_rel": self.mc["makespan_mean"] / self.n_jobs,
-            #"flowtime_rel": self.mc["flowtime_mean"] / self.n_jobs,
-            # "totalslack_mean": self.mc["mean_total_slack"],
-            # "freeslack_mean": self.mc["mean_free_slack"],
-            "n_jobs": self.n_jobs,
-            #"products_std": np.std([jobs_p1, self.n_jobs - jobs_p1]),
-            # "final_result": 0,
+            "n_jobs": self.n_jobs
         }
         self._update_state()
 
     def _update_state(self, last=False):
-
         fs = simulate_deterministic_bs_schedule(self.modified_jobs, self.curr_candidate.evaluator.initial_start_times)
         self.state_dict["plan_robustness"] = (fs.kpis[hp.SCHED_OBJECTIVE] - self.curr_candidate.evaluator.initial_objective_value) + self.mc["r_mean"]
-        #diff = (kpi[hp.SCHED_OBJECTIVE] - self.curr_candidate.evaluator.initial_objective_value)
-
-        # obj = self.mc["makespan_mean"] if hp.SCHED_OBJECTIVE == milp.Objective.CMAX else self.mc['flowtime_mean']
-        # self.state_dict["objective_diff"] = fs.kpis[hp.SCHED_OBJECTIVE] - obj
 
 
         job_task = self.curr_candidate.task_order[self.curr_episode_step if not last else self.curr_episode_step-1]
@@ -210,12 +197,6 @@ class RobustFlowshopGymEnv(gym.Env):
         )
 
     def perform_action(self, action, job_task):
-        #reward = 0
-        #low_slack = self.mc["total_slack_mean_job"][job_task] < self.mc["mean_total_slack"]
-        #critical_path = self.mc["total_slack_mean_job"][job_task] == 0
-        #high_slack = not low_slack
-        # task_dur_std = self.mc["dur_std_job"][job_task]
-        # assert task_dur_std >= 0, "std must be positive"
         new_duration = 0
 
         values = d.JobFactory.preprocess_one_operation(self.curr_candidate.jobs_raw, job_task[0], job_task[1])
@@ -277,20 +258,12 @@ class RobustFlowshopGymEnv(gym.Env):
         ws = 1-wr
         ir = 0
 
-        # # use default value (expected duration incl. downtime)
-        # if action == 0:
-        #     ir -= ws*10/self.n_jobs
-
         # use exptected value without downtime (optimistic)
         if action == 1:
-            ir += 4*ws#ws*10/self.n_jobs
-
-        # # consider stdev (conservative)
-        # elif action == 2:
-        #     ir -= ws*20/self.n_jobs
+            ir += 4*ws
 
         if(abs(self.state_dict["plan_robustness"])<abs(self.last_plan_robustness)):
-            ir += 6*wr#wr*10/self.n_jobs
+            ir += 6*wr
         else:
             ir -= 4*ws
 

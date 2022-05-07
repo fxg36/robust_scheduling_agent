@@ -11,24 +11,45 @@ from copy import deepcopy
 from data import JobFactory
 import pandas as pd
 from pathlib import Path
-
+import time
+import datetime
 
 def sars():
     hp.WEIGHT_ROBUSTNESS = 0.5
-    hp.N_MONTE_CARLO_EXPERIMENTS = 10000
+    hp.N_MONTE_CARLO_EXPERIMENTS = 50
+
+    start_time = time.time()
+    def get_time_str():
+        return datetime.timedelta(seconds=time.time() - start_time)
+
+    print(f'SARS experiments started {get_time_str()}')
 
     def sa_loop(sa_type):
         Result.results = []
         for i in range(10):
             sa.sa_method(sa_type, sample_id=i, do_print=True)
-        Result.write_results(f"SARS{sa_type+1}_{hp.SCHED_OBJECTIVE}", hp.SAMPLES_TO_LOAD)
+            print(f'\t{i+1}/10 experiments after {get_time_str()}')
+        #Result.write_results(f"SARS{sa_type+1}_{hp.SCHED_OBJECTIVE}", hp.SAMPLES_TO_LOAD)
 
-    for sa_type in [0, 1]:  # 0 = add slack times, 1 = create neighbour
-        for samples_to_load in [5, 10, 0]:
+    # k = 1
+    # for sa_type in [0, 1]:  # 0 = add slack times, 1 = create neighbour
+    #     for samples_to_load in [5, 10]:
+    #         for obj in [milp.Objective.F, milp.Objective.CMAX]:
+    #             hp.SCHED_OBJECTIVE = obj
+    #             hp.SAMPLES_TO_LOAD = samples_to_load
+    #             sa_loop(sa_type)
+    #             print(f'{k}/8 batches after {get_time_str()}')
+    #             k += 1
+
+    k = 1
+    for sa_type in [1]:  # 0 = add slack times, 1 = create neighbour
+        for samples_to_load in [5, 10]:
             for obj in [milp.Objective.F, milp.Objective.CMAX]:
                 hp.SCHED_OBJECTIVE = obj
                 hp.SAMPLES_TO_LOAD = samples_to_load
                 sa_loop(sa_type)
+                print(f'{k}/4 batches after {get_time_str()}')
+                k += 1
 
 
 def train_drl():
@@ -59,12 +80,12 @@ def train_drl():
 
 def test_drl():
     hp.WEIGHT_ROBUSTNESS = 0.5
-    hp.N_MONTE_CARLO_EXPERIMENTS = 10000
+    hp.N_MONTE_CARLO_EXPERIMENTS = 2000
 
     best_ppo_model_flowtime = 0
-    best_a2c_model_flowtime = 0
-    best_ppo_model_makespan = 0
-    best_a2c_model_makespan = 0
+    best_a2c_model_flowtime = 1
+    best_ppo_model_makespan = 1
+    best_a2c_model_makespan = 2
 
     for samples_to_load in [0, 5, 10]:
         for obj_models in [
@@ -143,7 +164,7 @@ if __name__ == "__main__":
 
     enable_multiproc()
     #expected_value_tests()
-    train_drl()
-    # sars()
-    # test_drl()
+    #train_drl()
+    #test_drl()
+    sars()
     ProcessSpawner.instances["montecarlo"].kill_processes()
