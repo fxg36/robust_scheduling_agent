@@ -13,6 +13,7 @@ import pandas as pd
 from pathlib import Path
 import time
 import datetime
+import sample_management
 
 def sars():
     hp.WEIGHT_ROBUSTNESS = 0.5
@@ -24,6 +25,7 @@ def sars():
 
     print(f'SARS experiments started {get_time_str()}')
 
+    
     def sa_loop(sa_type):
         Result.results = []
         for i in range(10):
@@ -31,24 +33,14 @@ def sars():
             print(f'\t{i+1}/10 experiments after {get_time_str()}')
         #Result.write_results(f"SARS{sa_type+1}_{hp.SCHED_OBJECTIVE}", hp.SAMPLES_TO_LOAD)
 
-    # k = 1
-    # for sa_type in [0, 1]:  # 0 = add slack times, 1 = create neighbour
-    #     for samples_to_load in [5, 10]:
-    #         for obj in [milp.Objective.F, milp.Objective.CMAX]:
-    #             hp.SCHED_OBJECTIVE = obj
-    #             hp.SAMPLES_TO_LOAD = samples_to_load
-    #             sa_loop(sa_type)
-    #             print(f'{k}/8 batches after {get_time_str()}')
-    #             k += 1
-
     k = 1
-    for sa_type in [1]:  # 0 = add slack times, 1 = create neighbour
+    for sa_type in [0, 1]:  # 0 = add slack times, 1 = create neighbour
         for samples_to_load in [5, 10]:
             for obj in [milp.Objective.F, milp.Objective.CMAX]:
                 hp.SCHED_OBJECTIVE = obj
                 hp.SAMPLES_TO_LOAD = samples_to_load
                 sa_loop(sa_type)
-                print(f'{k}/4 batches after {get_time_str()}')
+                print(f'{k}/8 batches after {get_time_str()}')
                 k += 1
 
 
@@ -98,6 +90,16 @@ def test_drl():
             a2c.test(test_episodes=100, result_suffix=str(hp.SAMPLES_TO_LOAD), model_no=obj_models[2])
 
 
+def analyze_agent_behavior():
+    hp.WEIGHT_ROBUSTNESS = 0.5
+    hp.N_MONTE_CARLO_EXPERIMENTS = 100 # does not matter here...
+    hp.SAMPLES_TO_LOAD = 10
+    hp.SCHED_OBJECTIVE = milp.Objective.F
+    best_ppo_model_flowtime = 0
+    ppo.test(test_episodes=100, result_suffix="behavior_"+str(hp.SAMPLES_TO_LOAD), model_no=best_ppo_model_flowtime)
+
+
+
 def expected_value_tests():
     hp.N_MONTE_CARLO_EXPERIMENTS = 1000
     hp.WEIGHT_ROBUSTNESS = 1
@@ -121,7 +123,7 @@ def expected_value_tests():
         for obj in [milp.Objective.F, milp.Objective.CMAX]:
             results = {"r": [], "s": [], "sum": [], "sumw": [], "obj": [], "w": [], "s_id": []}
             hp.SCHED_OBJECTIVE = obj
-            samples = base.load_samples(5)
+            samples = sample_management.load_samples(5)
             for sample in samples:
                 s_id = samples.index(sample)
                 jobs_raw_clone = deepcopy(sample.jobs_raw)
@@ -151,20 +153,11 @@ def enable_multiproc():
 
 
 if __name__ == "__main__":
-
-    # X = {}
-    # X[1,1] = 0
-    # X[1,2] = 50
-    # X[2,1] = 65
-    # X[2,2] = 80
-    # X[3,1] = 60
-    # X[3,2] = 120
-
-    # S = list(map(lambda x: (x[0],x[1]), sorted(list(X.items()), key=lambda x: (x[0][1],x[0][0]))))
-
     enable_multiproc()
     #expected_value_tests()
     #train_drl()
     #test_drl()
-    sars()
+    analyze_agent_behavior()
+    #sars()
+
     ProcessSpawner.instances["montecarlo"].kill_processes()

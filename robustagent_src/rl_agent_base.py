@@ -1,6 +1,5 @@
 from copy import deepcopy
-import pickle
-from random import choice, randint
+from random import choice
 import sys
 import time
 from typing import Callable, List
@@ -17,6 +16,7 @@ from stable_baselines3.common.monitor import Monitor
 from pathlib import Path
 import torch as th
 from robustness_evaluator import simulate_deterministic_bs_schedule
+import sample_management
 
 NO_OBSERVATION_FEATURES = 14
 NO_ACTIONS = 3  # = factor to stretch processing times. chosen by the agent for each task
@@ -25,48 +25,8 @@ NET_ARCH = dict(
 )  # just hidden layers. input and output layer are set automatically by stable baselines.
 
 
-def generate_samples(n_jobs,use_train_samples):
-    samples = []
-    for _ in range(hp.N_SAMPLES):
-        no_jobs_p1 = randint(1, n_jobs - 1)
-        random_jobvector = d.JobFactory.get_random_jobs(no_jobs_p1, n_jobs - no_jobs_p1)
-        bs = BaselineSchedule(random_jobvector)
-        samples.append(bs)
-        print("CREATED 1 SCHEDULE")
-
-    p = Path(".")
-    if use_train_samples:
-        p = p / "samples" / "train" / f"samples{hp.N_SAMPLES}_jobs{n_jobs}_{hp.SCHED_OBJECTIVE}.pickle"
-    else:
-        p = p / "samples" / "test" / f"samples{hp.N_SAMPLES}_jobs{n_jobs}_{hp.SCHED_OBJECTIVE}.pickle"
-        
-    with open(p, "wb") as f:
-        pickle.dump(samples, f, protocol=pickle.HIGHEST_PROTOCOL)
-
-
-def load_samples(n: int, use_train_samples=False) -> List[BaselineSchedule]:
-    if n == 0:
-        samples = []
-        samples.extend(load_samples(5, use_train_samples))
-        samples.extend(load_samples(10, use_train_samples))
-        return samples
-    else:
-        p = Path(".")
-        if use_train_samples:
-            p = p / "samples" / "train" / f"samples{hp.N_SAMPLES}_jobs{n}_{hp.SCHED_OBJECTIVE}.pickle"
-        else:
-            p = p / "samples" / "test" / f"samples{hp.N_SAMPLES}_jobs{n}_{hp.SCHED_OBJECTIVE}.pickle"
-        try:
-            with open(p, "rb") as f:
-                samples = pickle.load(f)
-            return samples
-        except:
-            generate_samples(n,use_train_samples)
-            return load_samples(n)
-
-
 def get_env(n_steps, learning_rate_start=0, use_train_samples=False):
-    samples = load_samples(hp.SAMPLES_TO_LOAD, use_train_samples)
+    samples = sample_management.load_samples(hp.SAMPLES_TO_LOAD, use_train_samples)
     env = RobustFlowshopGymEnv(samples, n_steps, learning_rate_start)
     env = Monitor(env, hp.TENSORBOARD_LOG_PATH, allow_early_resets=True)
     venv = DummyVecEnv([lambda: env])

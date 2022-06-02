@@ -31,7 +31,7 @@ def solve(objective: Objective, input):
     """
     no_jobs = len(input)
     no_machines = len(input[0]) - 3
-    job_dict = get_job_dict(input)
+    #job_dict = get_job_dict(input)
     processing_time = {(i + 1, input[i][k][0]): input[i][k][1] for i in range(no_jobs) for k in range(no_machines)}
     due_date = {i + 1: input[i][3] for i in range(no_jobs)}
     weights = {i + 1: input[i][4] for i in range(no_jobs)}

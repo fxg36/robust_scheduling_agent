@@ -4,8 +4,8 @@ import flowshop_milp as milp
 from math import exp
 import hyperparam as hp
 from process_spawner import ProcessSpawner
-import rl_agent_base as base
-from robustness_evaluator import RobustnessEvaluator
+from robustness_evaluator import BaselineSchedule, RobustnessEvaluator
+from sample_management import load_samples
 from data import JobFactory as jf
 import flowshhop_simulation as sim
 from robustness_evaluator import Result
@@ -46,9 +46,9 @@ def sa_method(
     do_print=False,
 ):
     start = time.time()
-    samples = base.load_samples(hp.SAMPLES_TO_LOAD)
+    samples = load_samples(hp.SAMPLES_TO_LOAD)
 
-    bs: base.BaselineSchedule
+    bs: BaselineSchedule
     bs = samples[sample_id]
     ev = bs.evaluator
     best = (ev.job_dict, ev.initial_start_times)
@@ -61,6 +61,7 @@ def sa_method(
             log_result=False,
         ),
         ev.initial_stats,
+        ev.initial_objective_value
     )
     curr, curr_eval = best, best_eval
     improvements_missed = 0
@@ -74,16 +75,14 @@ def sa_method(
     for i in range(NO_ITERATIONS):
         t = (NO_ITERATIONS - i) / NO_ITERATIONS
         candidate = create_neighbor(curr, t, sa_type)
-        if sa_type == 1: # 0 = add slack times, 1 = create neighbour
-            candidate_eval = ev.eval(
-                candidate[0], start_times_override=candidate[1], log_result=False
-            )
+        if sa_type == 1:  # 0 = add slack times, 1 = create neighbour
+            candidate_eval = ev.eval(candidate[0], start_times_override=candidate[1], log_result=False)
         else:
             candidate_eval = ev.eval(candidate[0], log_result=False)
-        
+
         if do_print:
             print(f"Iteration:{i}: {candidate_eval[0]}")
-        
+
         if candidate_eval[0] < best_eval[0]:
             if do_print:
                 obj = (
@@ -106,7 +105,7 @@ def sa_method(
             improvements_missed = 0
         elif diff < 0 or random() < exp(-diff / t):
             curr, curr_eval = candidate, candidate_eval
-    
+
     Result.results.append(
         Result(
             rsv=best_eval[0],
@@ -115,7 +114,7 @@ def sa_method(
             r_base=ev.initial_stats["r_mean"],
             s_base=ev.initial_stats["scom_mean"],
             time=time.time() - start,
-            objective_diff = best_eval[2] / initial_objective_value if sa_type == 1 else None
+            objective_diff=best_eval[2] / initial_objective_value,
         )
     )
 
