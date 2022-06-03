@@ -17,6 +17,7 @@ from pathlib import Path
 import torch as th
 from robustness_evaluator import simulate_deterministic_bs_schedule
 import sample_management
+from copy import deepcopy
 
 NO_OBSERVATION_FEATURES = 14
 NO_ACTIONS = 3  # = factor to stretch processing times. chosen by the agent for each task
@@ -210,7 +211,7 @@ class RobustFlowshopGymEnv(gym.Env):
         
         reward += self._get_inter_reward(action)
         
-        info = {"reward": reward}
+        info = {"reward": reward, "action_log": self.action_log}
         return self.state, reward, done, info
 
     def _get_inter_reward(self, action):
@@ -228,7 +229,7 @@ class RobustFlowshopGymEnv(gym.Env):
             ir -= 4*ws
 
         self.last_plan_robustness = self.state_dict["plan_robustness"]
-        self.action_log.append([action, ir])
+        self.action_log.append({'action':action, 'inter_reward':ir, 'obs': deepcopy(self.state_dict)})
 
         return ir
 
@@ -237,13 +238,9 @@ class RobustFlowshopGymEnv(gym.Env):
 
         reward += v ** 10 * -100 if v < 1 else v * -125
 
-        actions = list(map(lambda x: x[0], self.action_log))
-
-        interim_rewards = sum(list(map(lambda x: x[1], self.action_log)))
+        actions = list(map(lambda x: x['action'], self.action_log))
+        interim_rewards = sum(list(map(lambda x: x['inter_reward'], self.action_log)))
         action_std = np.std(actions)
-        # if action_std == 0:
-        #     reward = -125
-
         lr = self.initial_learning_rate * ((self.n_steps_overall - self.curr_step_overall) / self.n_steps_overall)
         obj = stats["makespan_mean"] if hp.SCHED_OBJECTIVE == milp.Objective.CMAX else stats["flowtime_mean"]
         print(

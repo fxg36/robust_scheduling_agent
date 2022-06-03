@@ -1,3 +1,4 @@
+from stable_baselines3 import PPO
 import hyperparam as hp
 from process_spawner import ProcessSpawner
 import rl_agent_a2c as a2c
@@ -14,6 +15,8 @@ from pathlib import Path
 import time
 import datetime
 import sample_management
+import numpy as np
+import agent_behavior_dt_analysis as aba
 
 def sars():
     hp.WEIGHT_ROBUSTNESS = 0.5
@@ -96,7 +99,33 @@ def analyze_agent_behavior():
     hp.SAMPLES_TO_LOAD = 10
     hp.SCHED_OBJECTIVE = milp.Objective.F
     best_ppo_model_flowtime = 0
-    ppo.test(test_episodes=100, result_suffix="behavior_"+str(hp.SAMPLES_TO_LOAD), model_no=best_ppo_model_flowtime)
+    n_ep = 500
+
+    model_info = base.get_model_name("ppo", best_ppo_model_flowtime, with_model_path=True)
+    model = PPO.load(model_info['model_path'])
+    Result.results = []
+    durations = []
+    env_norm = base.get_env(n_steps=n_ep)
+    obs = env_norm.reset()
+    e = 0
+    result_data = []
+    while True:
+        start_time = time.time()
+        action, _states = model.predict(np.array(obs))
+        obs, reward, done, info = env_norm.step(action)
+        if done:
+            e += 1
+            durations.append(time.time() - start_time)
+            print(f"{e}/{n_ep} TEST RESULT ({durations[-1]})")
+            result_data.append(info[0]['action_log'])
+            if e == n_ep:
+                break
+            env_norm.reset()
+    
+    aba.create_decision_tree(result_data)
+
+
+
 
 
 
