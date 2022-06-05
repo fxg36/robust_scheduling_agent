@@ -32,11 +32,6 @@ class MachineFailure:
     M3MaintenanceEffortExp = (M3MaintenanceEffort[0] + M3MaintenanceEffort[1] + M3MaintenanceEffort[2]) / 3
 
 
-class UnplannedDemand:  # currently not in use
-    UnplannedJobArrivalProb = 0.4
-    PriorityIncreasementProb = 0.2
-
-
 class JobFactory:
     """1) Generating random flow shop jobs
     2) Preprocessing jobs to include uncertainties for simulation"""

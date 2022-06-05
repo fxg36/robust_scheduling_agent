@@ -49,8 +49,6 @@ def calc_rs(n, e):
     print(f'n: {n} R:{R} S:{S}')
     return R,S
 
-#r,s = calc_rs(10, E_AB)
-#r,s = calc_rs(10, E_AB2)
 
 R = []
 S = []

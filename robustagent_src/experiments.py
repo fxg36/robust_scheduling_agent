@@ -34,7 +34,7 @@ def sars():
         for i in range(10):
             sa.sa_method(sa_type, sample_id=i, do_print=True)
             print(f'\t{i+1}/10 experiments after {get_time_str()}')
-        #Result.write_results(f"SARS{sa_type+1}_{hp.SCHED_OBJECTIVE}", hp.SAMPLES_TO_LOAD)
+        Result.write_results(f"SARS{sa_type+1}_{hp.SCHED_OBJECTIVE}", hp.SAMPLES_TO_LOAD)
 
     k = 1
     for sa_type in [0, 1]:  # 0 = add slack times, 1 = create neighbour
@@ -183,10 +183,10 @@ def enable_multiproc():
 
 if __name__ == "__main__":
     enable_multiproc()
-    #expected_value_tests()
-    #train_drl()
-    #test_drl()
+    expected_value_tests()
+    train_drl()
+    test_drl()
     analyze_agent_behavior()
-    #sars()
+    sars()
 
     ProcessSpawner.instances["montecarlo"].kill_processes()

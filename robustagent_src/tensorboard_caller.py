@@ -23,7 +23,6 @@ def load():
     print(f'\n\n\nOpen tensorboard log: {logdir}\n==============================')
     tb = program.TensorBoard()
     tb.configure(argv=[None, '--logdir', logdir])
-    #tb.configure(argv=[None])
 
     url = tb.launch()
     print(f"\n\nTensorflow listening on: {url}")
@@ -31,7 +30,5 @@ def load():
     n = str(input('\n\n\n[x] to reload or anything else to stop'))
     if n.lower() == "x":
         load()
-
-
 
 load()

@@ -131,7 +131,6 @@ class BaselineSchedule:
         start_times_cleaned = RobustnessEvaluator.get_start_times_cleaned(bs)
         self.mc_stats = get_initial_stochastic_infos(objective_value, self.job_dict, start_times_cleaned)
         self.evaluator = RobustnessEvaluator(jobs_raw, start_times_cleaned, self.mc_stats, objective_value)
-        #self.task_order = list(map(lambda x: x[0], sorted(list(start_times.items()), key=lambda x: x[1])))
         self.task_order = list(map(lambda x: x[0], sorted(list(start_times.items()), key=lambda x: (x[0][1],x[1]))))
 
 

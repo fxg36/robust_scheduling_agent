@@ -95,8 +95,6 @@ class RobustFlowshopGymEnv(gym.Env):
         self._set_initial_state()
 
     def _set_initial_state(self):
-        # if len(V) < 10 or V[-1] < 1 or self.curr_step_overall/self.n_steps_overall > 0.5:
-        #    self.curr_candidate = choice(self.candidates)
         self.curr_candidate = choice(self.candidates)
         self.mc = self.curr_candidate.mc_stats
         self.modified_jobs = deepcopy(self.curr_candidate.job_dict)
